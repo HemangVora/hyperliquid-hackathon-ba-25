@@ -47,7 +47,7 @@ export default function PortfolioSummary({
       <Card hover>
         <CardHeader>
           <CardTitle className="text-base font-medium text-gray-400">
-            Today's Earnings
+            Today&apos;s Earnings
           </CardTitle>
         </CardHeader>
         <CardContent>
