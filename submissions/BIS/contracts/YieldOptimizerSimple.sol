@@ -98,7 +98,7 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
         operator = msg.sender;
         feeRecipient = msg.sender;
         performanceFee = 200; // 2% default
-        rebalanceDelay = 1 hours;
+        rebalanceDelay = 24 hours;  // Conservative switching: 24-hour minimum
     }
 
     // ============================================

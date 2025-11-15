@@ -15,35 +15,11 @@ export default function PortfolioPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Portfolio</h1>
-            <p className="text-gray-400">
-              Monitor your liquidity pools and track earnings
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'grid'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <LayoutGrid className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'table'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <Table className="w-5 h-5" />
-            </button>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-2">Portfolio</h1>
+          <p className="text-gray-400">
+            Monitor your liquidity pools and track earnings
+          </p>
         </div>
 
         <PortfolioSummary
@@ -56,11 +32,37 @@ export default function PortfolioPage() {
         <EarningsChart data={mockPortfolioData.dailyEarnings} />
 
         <div>
-          <div className="mb-4">
-            <h2 className="text-2xl font-bold text-white">Active Pools</h2>
-            <p className="text-gray-400 mt-1">
-              {mockPortfolioData.pools.length} pools generating earnings
-            </p>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Active Pools</h2>
+              <p className="text-gray-400 mt-1">
+                {mockPortfolioData.pools.length} pools generating earnings
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-2 rounded-lg transition-colors ${
+                  viewMode === 'table'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+                aria-label="Table view"
+              >
+                <Table className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {viewMode === 'grid' ? (

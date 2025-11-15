@@ -1,6 +1,6 @@
 {
-  "/page": "app/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
   "/dashboard/page": "app/dashboard/page.js",
-  "/dashboard/positions/page": "app/dashboard/positions/page.js",
-  "/dashboard/strategies/page": "app/dashboard/strategies/page.js"
+  "/rebalancing/page": "app/rebalancing/page.js",
+  "/dashboard/positions/page": "app/dashboard/positions/page.js"
 }

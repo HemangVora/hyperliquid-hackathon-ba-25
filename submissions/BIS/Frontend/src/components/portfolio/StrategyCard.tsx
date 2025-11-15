@@ -40,7 +40,7 @@ export default function StrategyCard({
     >
       {recommended && (
         <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 z-10">
-          <div className="bg-gradient-to-r from-primary-500 to-purple-500 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+          <div className="bg-emerald-500 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
             Recommended
           </div>
         </div>
@@ -48,16 +48,16 @@ export default function StrategyCard({
 
       <Card className={`h-full border-2 transition-all duration-300 ${
         isSelected
-          ? 'border-primary-500 shadow-xl shadow-primary-500/50'
+          ? 'border-emerald-500 shadow-xl shadow-emerald-500/50'
           : 'border-gray-700 hover:border-gray-600'
       }`}>
         <CardHeader>
           <div className="flex items-start justify-between mb-4">
-            <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center`}>
+            <div className={`w-16 h-16 rounded-xl ${color} flex items-center justify-center`}>
               <Icon className="w-8 h-8 text-white" />
             </div>
             {isSelected && (
-              <div className="bg-primary-500 rounded-full p-1">
+              <div className="bg-emerald-500 rounded-full p-1">
                 <Check className="w-5 h-5 text-white" />
               </div>
             )}
@@ -105,7 +105,7 @@ export default function StrategyCard({
             onClick={onSelect}
             className={`w-full ${
               isSelected
-                ? 'bg-primary-500 hover:bg-primary-600'
+                ? 'bg-emerald-500 hover:bg-emerald-400'
                 : 'bg-gray-700 hover:bg-gray-600'
             }`}
           >
