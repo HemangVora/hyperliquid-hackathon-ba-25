@@ -935,7 +935,7 @@ def main():
     load_dotenv()
     
     # Configuration
-    RPC_URL = os.getenv("HYPERLIQUID_RPC_URL", "https://api.hyperliquid.xyz/evm")
+    RPC_URL = os.getenv("HYPERLIQUID_RPC_URL", "https://rpc.hyperliquid.xyz/evm")
     PRIVATE_KEY = os.getenv("PRIVATE_KEY")
     VAULT_ADDRESS = os.getenv("VAULT_ADDRESS")
     GLUEX_API_KEY = os.getenv("GLUEX_API_KEY")

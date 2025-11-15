@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IVault.sol";
 import "./IGlueXRouter.sol";
 
@@ -111,7 +111,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
         address _glueXRouter,
         string memory _name,
         string memory _symbol
-    ) ERC20(_name, _symbol) {
+    ) ERC20(_name, _symbol) Ownable(msg.sender) {
         asset = IERC20(_asset);
         glueXRouter = IGlueXRouter(_glueXRouter);
         operator = msg.sender;
@@ -223,7 +223,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
         _withdrawAllAllocations();
 
         // Calculate total available assets
-        uint256 totalAssets = asset.balanceOf(address(this));
+        uint256 availableAssets = asset.balanceOf(address(this));
 
         // Allocate to new target vaults
         for (uint256 i = 0; i < targetVaults.length; i++) {

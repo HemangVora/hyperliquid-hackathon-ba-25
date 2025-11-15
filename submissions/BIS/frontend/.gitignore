@@ -1,0 +1,23 @@
+# Ignore the pic folder
+pic/
+
+# Common ignores for Node.js/Next.js projects
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
