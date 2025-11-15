@@ -42,9 +42,9 @@ git --version
 
 **HyperEVM Setup:**
 
-1. Get HyperEVM RPC URL: `https://api.hyperliquid.xyz/evm`
-2. Fund your wallet with ETH for gas fees
-3. Get USDC/USDT on HyperEVM for testing
+1. Get HyperEVM Mainnet RPC URL: `https://rpc.hyperliquid.xyz/evm`
+2. Fund your wallet with HYPE tokens for gas fees
+3. Get USDC/USDT on HyperEVM mainnet for operations
 
 ## Step-by-Step Setup
 
@@ -71,8 +71,10 @@ forge install OpenZeppelin/openzeppelin-contracts
 # Create .env file
 cat > .env << EOF
 PRIVATE_KEY=your_private_key_without_0x
-HYPERLIQUID_RPC_URL=https://api.hyperliquid.xyz/evm
-ASSET_ADDRESS=0x...  # USDC address on HyperEVM
+HYPERLIQUID_RPC_URL=https://rpc.hyperliquid.xyz/evm
+ASSET_ADDRESS=0x...           # USDC on HyperEVM Mainnet
+GLUEX_ROUTER_ADDRESS=0x...    # GlueX router on HyperEVM (ask GlueX team)
+OPERATOR_ADDRESS=0x...        # Optional: bot/operator EOA. Defaults to deployer
 EOF
 
 # Load environment
@@ -89,7 +91,7 @@ nano DeployYieldOptimizer.s.sol
 # Change: address public asset = address(0);
 # To: address public asset = 0xYourUSDCAddress;
 
-# Deploy to HyperEVM
+# Deploy full YieldOptimizer (ERC-7540) to HyperEVM
 forge script DeployYieldOptimizer \
   --rpc-url $HYPERLIQUID_RPC_URL \
   --private-key $PRIVATE_KEY \
@@ -110,7 +112,7 @@ cast code $VAULT_ADDRESS --rpc-url $HYPERLIQUID_RPC_URL
 # Check owner
 cast call $VAULT_ADDRESS "owner()(address)" --rpc-url $HYPERLIQUID_RPC_URL
 
-# Check whitelisted vaults
+# Check whitelisted vaults (works only on full YieldOptimizer)
 cast call $VAULT_ADDRESS "getWhitelistedVaults()(address[])" --rpc-url $HYPERLIQUID_RPC_URL
 ```
 
@@ -138,7 +140,7 @@ nano .env
 **Edit `.env` file:**
 
 ```bash
-HYPERLIQUID_RPC_URL=https://api.hyperliquid.xyz/evm
+HYPERLIQUID_RPC_URL=https://rpc.hyperliquid.xyz/evm
 PRIVATE_KEY=your_operator_private_key
 VAULT_ADDRESS=0x...  # From Step 2
 GLUEX_API_KEY=your_gluex_api_key_from_portal

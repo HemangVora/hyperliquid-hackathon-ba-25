@@ -1,0 +1,38 @@
+### Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+/submissions/BIS/Frontend/node_modules/
+/submissions/BIS/Frontend/.next/
+frontend/.next/server/vendor-chunks/next.js
+### Virtual environments
+backend/venv/
+.venv/
+venv/
+
+### Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+### OS junk
+.DS_Store
+
+contracts/build/
+
+contracts/out/
+contracts/cache_forge/
+contracts/cache/
+contracts/artifacts/
+contracts/node_modules/
+contracts/lib/
+contracts/test/
+contracts/script/
+contracts/src/
+contracts/contracts/
+contracts/broadcast/
+
+.next/

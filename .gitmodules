@@ -1,0 +1,3 @@
+[submodule "submissions/BIS/contracts/lib/openzeppelin-contracts"]
+	path = submissions/BIS/contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

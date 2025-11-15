@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IVault.sol";
 
 /**
@@ -23,11 +23,8 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
     /// @notice Mapping of whitelisted vaults that can receive allocations
     mapping(address => bool) public whitelistedVaults;
 
-    /// @notice Array of all whitelisted vault addresses
-    address[] public vaultList;
-
-    /// @notice Current active allocations: vault => amount
-    mapping(address => uint256) public allocations;
+    /// @notice Array of all whitelisted vault addresses (used for iteration only)
+    address[] private vaultList;
 
     /// @notice Operator address authorized to execute rebalancing
     address public operator;
@@ -93,7 +90,7 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
         address _asset,
         string memory _name,
         string memory _symbol
-    ) ERC20(_name, _symbol) {
+    ) ERC20(_name, _symbol) Ownable(msg.sender) {
         asset = IERC20(_asset);
         operator = msg.sender;
         feeRecipient = msg.sender;
@@ -180,7 +177,15 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
         _collectPerformanceFee();
 
         // Withdraw from all current allocations
-        _withdrawAllAllocations();
+        for (uint256 i = 0; i < vaultList.length; i++) {
+            address vault = vaultList[i];
+            if (whitelistedVaults[vault]) {
+                uint256 shares = IVault(vault).balanceOf(address(this));
+                if (shares > 0) {
+                    IVault(vault).redeem(shares, address(this), address(this));
+                }
+            }
+        }
 
         // Calculate total available assets
         uint256 totalAvailable = asset.balanceOf(address(this));
@@ -203,9 +208,6 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
             // Approve and deposit to vault
             asset.approve(vault, amount);
             IVault(vault).deposit(amount, address(this));
-
-            // Update allocation tracking
-            allocations[vault] = amount;
         }
 
         lastRebalance = block.timestamp;
@@ -221,7 +223,6 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
         uint256 shares = IVault(vault).balanceOf(address(this));
         if (shares > 0) {
             IVault(vault).redeem(shares, address(this), address(this));
-            allocations[vault] = 0;
         }
     }
 
@@ -346,94 +347,6 @@ contract YieldOptimizerSimple is ERC20, Ownable, ReentrancyGuard {
         uint256 supply = totalSupply();
         if (supply == 0) return 0;
         return (shares * totalAssets()) / supply;
-    }
-
-    /**
-     * @notice Get list of all whitelisted vaults
-     * @return activeVaults Array of active vault addresses
-     */
-    function getWhitelistedVaults()
-        external
-        view
-        returns (address[] memory activeVaults)
-    {
-        uint256 count = 0;
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            if (whitelistedVaults[vaultList[i]]) count++;
-        }
-
-        activeVaults = new address[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            if (whitelistedVaults[vaultList[i]]) {
-                activeVaults[index] = vaultList[i];
-                index++;
-            }
-        }
-    }
-
-    /**
-     * @notice Get current allocations across all vaults
-     * @return vaults Array of vault addresses
-     * @return amounts Array of allocated amounts
-     */
-    function getCurrentAllocations()
-        external
-        view
-        returns (address[] memory vaults, uint256[] memory amounts)
-    {
-        vaults = new address[](vaultList.length);
-        amounts = new uint256[](vaultList.length);
-
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            vaults[i] = vaultList[i];
-
-            // Get actual balance in vault
-            uint256 shares = IVault(vaultList[i]).balanceOf(address(this));
-            if (shares > 0) {
-                amounts[i] = IVault(vaultList[i]).convertToAssets(shares);
-            }
-        }
-    }
-
-    /**
-     * @notice Get the current APY for the vault (calculated from recent performance)
-     * @return apy Current APY in basis points
-     */
-    function getCurrentAPY() external view returns (uint256 apy) {
-        if (lastTVL == 0 || lastRebalance == 0) return 0;
-
-        uint256 currentTVL = totalAssets();
-        if (currentTVL <= lastTVL) return 0;
-
-        uint256 profit = currentTVL - lastTVL;
-        uint256 timePassed = block.timestamp - lastRebalance;
-
-        if (timePassed == 0) return 0;
-
-        // Annualized return
-        uint256 secondsPerYear = 365 days;
-        apy = (profit * secondsPerYear * 10000) / (lastTVL * timePassed);
-    }
-
-    // ============================================
-    // INTERNAL FUNCTIONS
-    // ============================================
-
-    /**
-     * @notice Withdraw from all current vault allocations
-     */
-    function _withdrawAllAllocations() internal {
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            address vault = vaultList[i];
-            if (whitelistedVaults[vault]) {
-                uint256 shares = IVault(vault).balanceOf(address(this));
-                if (shares > 0) {
-                    IVault(vault).redeem(shares, address(this), address(this));
-                }
-                allocations[vault] = 0;
-            }
-        }
     }
 
     /**
