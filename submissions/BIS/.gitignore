@@ -11,7 +11,8 @@ frontend/.next/server/vendor-chunks/next.js
 backend/venv/
 .venv/
 venv/
-
+backend/.env
+.env
 ### Tool caches
 .mypy_cache/
 .pytest_cache/

@@ -120,7 +120,7 @@ forge install OpenZeppelin/openzeppelin-contracts
 export PRIVATE_KEY=your_private_key
 export HYPERLIQUID_RPC_URL=https://rpc.hyperliquid.xyz/evm
 export ASSET_ADDRESS=0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb # USDC/USDT address on HyperEVM Mainnet
-export GLUEX_ROUTER_ADDRESS=0x... # GlueX router on HyperEVM (ask GlueX)
+export GLUEX_ROUTER_ADDRESS=0xe95F6EAeaE1E4d650576Af600b33D9F7e5f9f7fd # GlueX router on HyperEVM (ask GlueX)
 # Optional – set if operator address differs from deployer
 export OPERATOR_ADDRESS=0xYourBotAddress
 ```
