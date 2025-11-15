@@ -1,4 +1,4 @@
-// File: C:\HyperLiquid\submissions\BIS\src\app\layout.tsx
+// File: C:\HyperLiquid\hyperliquid-hackathon-ba-25\submissions\BIS\Frontend\src\app\layout.tsx
 import * as entry from '../../../src/app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -26,9 +26,9 @@ export default function Button({
   };
 
   const sizeStyles = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2 text-base',
-    lg: 'px-6 py-3 text-lg',
+    sm: 'px-3 py-2 md:py-1.5 text-sm min-h-[44px] md:min-h-0',
+    md: 'px-4 py-2.5 md:py-2 text-base min-h-[44px] md:min-h-0',
+    lg: 'px-6 py-3 text-lg min-h-[48px]',
   };
 
   return (
