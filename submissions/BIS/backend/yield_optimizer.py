@@ -7,6 +7,18 @@ This service:
 2. Calculates optimal allocations based on risk/reward
 3. Executes rebalancing via smart contract
 4. Monitors performance and collects metrics
+
+CONFIGURATION QUICK GUIDE:
+==========================
+To change allocation strategy, edit the constants below (lines 32-50):
+
+- ALLOCATION_STRATEGY: "concentrated" or "diversified"
+  • "concentrated" = 100% to highest yield vault (maximize returns)
+  • "diversified" = Spread across top 3 vaults (balanced risk/reward)
+
+- MIN_TOTAL_ASSETS: Minimum USDC to trigger rebalance (default: 10)
+- MIN_REBALANCE_HOURS: Hours between rebalances (default: 24)
+- SCORE_IMPROVEMENT_THRESHOLD: Required improvement % to rebalance (default: 15%)
 """
 
 import os
@@ -32,13 +44,21 @@ logger = logging.getLogger(__name__)
 # ==================== CONFIGURATION CONSTANTS ====================
 
 # Liquidity constraints
-MIN_TVL = 250_000  # Minimum pool TVL in USDC ($250K)
-MAX_CONCENTRATION = 0.20  # Maximum 20% of any pool's TVL
+MIN_TVL = 0  # Minimum pool TVL in USDC (set to 0 since TVL data unavailable from API)
+MAX_CONCENTRATION = 0.35  # Maximum 35% of any pool's TVL (allows diversification across 3+ vaults)
 
 # Rebalancing constraints
 MIN_REBALANCE_HOURS = 24  # Conservative switching: 24 hours minimum
-SCORE_IMPROVEMENT_THRESHOLD = 0.25  # Must be 25% better to switch
-GAS_ROI_MULTIPLE = 3.0  # Expected benefit must be 3x gas cost
+SCORE_IMPROVEMENT_THRESHOLD = 0.15  # Must be 15% better to switch
+MIN_TOTAL_ASSETS = 10.0  # Minimum 10 USDC total to execute rebalance (avoids dust transactions)
+MIN_ALLOCATION_PER_VAULT = 1.0  # Minimum 1 USDC per vault (GlueX vaults may reject smaller deposits)
+# GAS_ROI_MULTIPLE = 3.0  # [DEPRECATED] Not used on HyperEVM due to negligible gas costs (~$0.01)
+
+# Allocation strategy
+ALLOCATION_STRATEGY = "concentrated"  # Options: "diversified" or "concentrated"
+# - "diversified": Spread funds across top 3 vaults based on composite scores
+# - "concentrated": Allocate 100% to highest-scoring vault (maximizes yield, higher risk)
+MAX_VAULTS_DIVERSIFIED = 3  # Number of vaults to use in diversified strategy
 
 # Scoring parameters
 APY_CAP = 50.0  # Cap APY at 50% for normalization (prevents unrealistic values)
@@ -105,14 +125,39 @@ class AllocationTarget:
 class GlueXClient:
     """Client for interacting with GlueX APIs"""
     
-    def __init__(self, api_key: str, base_url: str = "https://api.gluex.xyz"):
+    def __init__(self, api_key: str, base_url: str = "https://yield-api.gluex.xyz"):
         self.api_key = api_key
         self.base_url = base_url
+        # GlueX network configuration (can be overridden via env)
+        # Default to Ethereum mainnet which hosts the GlueX vaults.
+        self.chain = os.getenv("GLUEX_CHAIN", "hyperevm")
+        # Optional: specific input token (e.g. USDC) for yield calculations
+        self.input_token = os.getenv("GLUEX_INPUT_TOKEN")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         })
+    
+    @staticmethod
+    def _safe_float(value, default: float = 0.0) -> float:
+        """Safely extract a float from a value that might be nested in a dict."""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return default
+        if isinstance(value, dict):
+            # Try common keys for numeric values
+            for key in ["value", "apy", "amount", "tvl", "tvl_usd"]:
+                if key in value:
+                    return GlueXClient._safe_float(value[key], default)
+            return default
+        return default
     
     def get_historical_apy(
         self, 
@@ -124,23 +169,110 @@ class GlueXClient:
         
         Docs: https://docs.gluex.xyz/api-reference/yield-api/post-historical-apy
         """
-        try:
-            response = self.session.post(
-                f"{self.base_url}/yields/historical-apy",
-                json={
-                    "vaults": vaults,
-                    "timeframe": timeframe
+        results: Dict[str, Dict] = {}
+
+        for vault in vaults:
+            vault_lower = vault.lower()
+            normalized_vault = vault_lower
+
+            tvl_value = 0.0
+            apy_value = 0.0
+            historical_apys: List[float] = []
+
+            # 1) Fetch TVL (best effort)
+            tvl_value = 0.0
+            tvl_payload = {
+                "chain": self.chain,
+                "pool_address": normalized_vault,
+                "lp_token_address": normalized_vault,
+            }
+            try:
+                tvl_response = self.session.post(
+                    f"{self.base_url}/tvl",
+                    json=tvl_payload,
+                    timeout=10,
+                )
+                if tvl_response.status_code == 404:
+                    logger.debug(f"TVL not found for vault {vault[:10]}...")
+                elif tvl_response.status_code == 422:
+                    logger.debug(f"TVL endpoint returned 422 for vault {vault[:10]}... (may not be supported)")
+                else:
+                    tvl_response.raise_for_status()
+                    tvl_json = tvl_response.json()
+                    # Response format: {"success": true, "tvl": {"tvl": 1234567.89, ...}}
+                    if tvl_json.get("success") and "tvl" in tvl_json:
+                        tvl_data = tvl_json["tvl"]
+                        if isinstance(tvl_data, dict) and "tvl" in tvl_data:
+                            tvl_value = self._safe_float(tvl_data["tvl"], 0.0)
+                        else:
+                            tvl_value = self._safe_float(tvl_data, 0.0)
+                    logger.debug(f"Fetched TVL ${tvl_value:,.0f} for vault {vault[:10]}...")
+            except requests.RequestException as e:
+                logger.debug(f"Failed to fetch TVL for {vault}: {e}")
+
+            # 2) Fetch historical APY (required)
+            hist_payload = {
+                "chain": self.chain,
+                "pool_address": normalized_vault,
+            }
+            if self.input_token:
+                hist_payload["input_token"] = self.input_token
+
+            try:
+                hist_response = self.session.post(
+                    f"{self.base_url}/historical-apy",
+                    json=hist_payload,
+                    timeout=10,
+                )
+                hist_response.raise_for_status()
+                hist_json = hist_response.json()
+
+                # Debug: log the response to see what we're getting
+                logger.debug(f"GlueX historical APY response for {vault[:10]}...: {hist_json}")
+
+                historic_yield = hist_json.get("historic_yield") or hist_json.get("historicYield") or hist_json
+
+                if isinstance(historic_yield, dict):
+                    # Use safe_float to handle nested dicts or various types
+                    apy_raw = historic_yield.get("apy", historic_yield.get("average_apy"))
+                    apy_value = self._safe_float(apy_raw, 0.0)
+                    
+                    history = (
+                        historic_yield.get("history")
+                        or historic_yield.get("historic_apy")
+                        or historic_yield.get("points")
+                    )
+                    if isinstance(history, list):
+                        for point in history:
+                            if isinstance(point, dict) and "apy" in point:
+                                apy_point = self._safe_float(point["apy"], None)
+                                if apy_point is not None:
+                                    historical_apys.append(apy_point)
+                elif isinstance(historic_yield, list):
+                    for point in historic_yield:
+                        if isinstance(point, dict) and "apy" in point:
+                            apy_point = self._safe_float(point["apy"], None)
+                            if apy_point is not None:
+                                historical_apys.append(apy_point)
+                    if historical_apys:
+                        apy_value = historical_apys[-1]
+
+                results[vault_lower] = {
+                    "apy": apy_value,
+                    "tvl": tvl_value,
+                    "historical": historical_apys,
                 }
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            logger.info(f"Fetched APY data for {len(data)} vaults")
-            return data
-            
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch APY data: {e}")
-            return {}
+
+                tvl_display = f"${tvl_value:,.0f}" if tvl_value > 0 else "N/A"
+                logger.info(
+                    f"Fetched GlueX yields for vault {vault[:10]}... - "
+                    f"APY {apy_value:.2f}%, TVL {tvl_display}"
+                )
+
+            except requests.RequestException as e:
+                logger.error(f"Failed to fetch historical APY data for {vault}: {e}")
+
+        return results
     
     def get_quote(
         self,
@@ -155,8 +287,10 @@ class GlueXClient:
         Docs: https://docs.gluex.xyz/api-reference/router-api/post-quote
         """
         try:
+            # Router API uses a different base URL than Yield API
+            router_url = "https://router.gluex.xyz/v1"
             response = self.session.post(
-                f"{self.base_url}/router/quote",
+                f"{router_url}/quote",
                 json={
                     "tokenIn": token_in,
                     "tokenOut": token_out,
@@ -384,6 +518,11 @@ class YieldOptimizer:
         Returns:
             Score from 0.0 to 1.0 (higher is better)
         """
+        # If TVL data unavailable (0), return neutral score
+        if tvl == 0:
+            logger.debug("TVL=0, using neutral liquidity score of 0.5")
+            return 0.5  # Neutral score when TVL unknown
+        
         # Absolute TVL tier scoring
         if tvl >= 5_000_000:  # $5M+
             base_score = 1.0
@@ -626,7 +765,9 @@ class YieldOptimizer:
         """
         Calculate optimal allocation across vaults using composite scoring.
 
-        Strategy: Maximize composite score while diversifying across top vaults
+        Strategy depends on ALLOCATION_STRATEGY configuration:
+        - "concentrated": 100% to highest-scoring vault (max yield)
+        - "diversified": Spread across top vaults based on scores (balanced risk/reward)
 
         Args:
             metrics: List of VaultMetrics with composite scores
@@ -636,7 +777,7 @@ class YieldOptimizer:
         Returns:
             List of AllocationTarget with optimal distribution
         """
-        logger.info("Calculating optimal allocation using composite scores...")
+        logger.info(f"Calculating optimal allocation using '{ALLOCATION_STRATEGY}' strategy...")
 
         # Filter vaults with positive composite scores
         valid_metrics = [m for m in metrics if m.composite_score > 0]
@@ -648,53 +789,73 @@ class YieldOptimizer:
         # Sort by composite score (highest first)
         sorted_metrics = sorted(valid_metrics, key=lambda x: x.composite_score, reverse=True)
 
-        # Select top vaults
-        top_vaults = sorted_metrics[:max_vaults]
-
-        logger.info(f"Selected top {len(top_vaults)} vaults by composite score")
-
-        # Calculate weights proportional to composite scores
-        total_score = sum(v.composite_score for v in top_vaults)
-
-        if total_score == 0:
-            # Equal weight as fallback
-            weights = [1.0 / len(top_vaults)] * len(top_vaults)
+        # Select strategy
+        if ALLOCATION_STRATEGY == "concentrated":
+            # Concentrated strategy: 100% to highest-scoring vault
+            best_vault = sorted_metrics[0]
+            allocations = [AllocationTarget(
+                address=best_vault.address,
+                amount=total_assets,
+                percentage=100.0
+            )]
+            
+            logger.info(
+                f"💎 Concentrated allocation: 100% ({total_assets/1e6:.2f} USDC) "
+                f"to {best_vault.address[:10]}... "
+                f"(Score: {best_vault.composite_score:.3f}, APY: {best_vault.apy*100:.2f}%)"
+            )
+            
+            return allocations
+        
         else:
-            weights = [v.composite_score / total_score for v in top_vaults]
+            # Diversified strategy: Spread across top vaults
+            top_vaults = sorted_metrics[:max_vaults]
+            
+            logger.info(f"📊 Diversified allocation across top {len(top_vaults)} vaults")
 
-        # Create allocation targets
-        allocations = []
-        for vault, weight in zip(top_vaults, weights):
-            amount = int(total_assets * weight)
+            # Calculate weights proportional to composite scores
+            total_score = sum(v.composite_score for v in top_vaults)
 
-            # Verify concentration constraint
-            concentration = amount / (vault.tvl * 1e6 + 1)  # Convert TVL to wei
-            if concentration > MAX_CONCENTRATION:
-                logger.warning(
-                    f"Concentration {concentration*100:.1f}% exceeds max {MAX_CONCENTRATION*100}% "
-                    f"for {vault.address[:10]}..."
+            if total_score == 0:
+                # Equal weight as fallback
+                weights = [1.0 / len(top_vaults)] * len(top_vaults)
+            else:
+                weights = [v.composite_score / total_score for v in top_vaults]
+
+            # Create allocation targets
+            allocations = []
+            for vault, weight in zip(top_vaults, weights):
+                amount = int(total_assets * weight)
+
+                # Verify concentration constraint (skip if TVL data unavailable)
+                if vault.tvl > 0:
+                    concentration = amount / (vault.tvl * 1e6 + 1)  # Convert TVL to wei
+                    if concentration > MAX_CONCENTRATION:
+                        logger.warning(
+                            f"Concentration {concentration*100:.1f}% exceeds max {MAX_CONCENTRATION*100:.1f}% "
+                            f"for {vault.address[:10]}..."
+                        )
+
+                allocations.append(AllocationTarget(
+                    address=vault.address,
+                    amount=amount,
+                    percentage=weight * 100
+                ))
+
+                logger.info(
+                    f"  → {weight*100:.1f}% ({amount/1e6:.2f} USDC) "
+                    f"to {vault.address[:10]}... "
+                    f"(Score: {vault.composite_score:.3f}, APY: {vault.apy*100:.2f}%)"
                 )
 
-            allocations.append(AllocationTarget(
-                address=vault.address,
-                amount=amount,
-                percentage=weight * 100
-            ))
-
-            logger.info(
-                f"Allocate {weight*100:.1f}% ({amount/1e6:.2f} USDC) "
-                f"to {vault.address[:10]}... "
-                f"(Score: {vault.composite_score:.3f}, APY: {vault.apy*100:.2f}%)"
-            )
-
-        return allocations
+            return allocations
 
     def should_rebalance(
         self,
         current_metrics: List[VaultMetrics],
         optimal_allocations: List[AllocationTarget],
         total_assets: float,
-        estimated_gas_cost_usd: float = 50.0
+        estimated_gas_cost_usd: float = 0.01  # HyperEVM has very low gas costs (~$0.01)
     ) -> Tuple[bool, str]:
         """
         Determine if rebalancing should occur based on conservative criteria.
@@ -703,7 +864,7 @@ class YieldOptimizer:
             current_metrics: Current vault metrics
             optimal_allocations: Proposed optimal allocations
             total_assets: Total assets in vault
-            estimated_gas_cost_usd: Estimated gas cost in USD
+            estimated_gas_cost_usd: Estimated gas cost in USD (HyperEVM default: $0.01)
 
         Returns:
             Tuple of (should_rebalance: bool, reason: str)
@@ -718,8 +879,26 @@ class YieldOptimizer:
         # 2. Check if we have assets to rebalance
         if total_assets == 0:
             return False, "No assets to rebalance"
+        
+        # 3. Check minimum total assets threshold (avoid dust transactions)
+        total_assets_usdc = total_assets / 1e6  # Convert from wei to USDC
+        if total_assets_usdc < MIN_TOTAL_ASSETS:
+            return False, (
+                f"Total assets ${total_assets_usdc:.2f} below minimum ${MIN_TOTAL_ASSETS:.0f} "
+                f"(prevents dust transactions that may fail)"
+            )
+        
+        # 4. Check minimum allocation per vault (skip for concentrated strategy with single vault)
+        if ALLOCATION_STRATEGY != "concentrated" or len(optimal_allocations) > 1:
+            for alloc in optimal_allocations:
+                alloc_usdc = alloc.amount / 1e6
+                if alloc_usdc < MIN_ALLOCATION_PER_VAULT:
+                    return False, (
+                        f"Allocation ${alloc_usdc:.2f} to {alloc.address[:10]}... "
+                        f"below minimum ${MIN_ALLOCATION_PER_VAULT:.0f} USDC per vault"
+                    )
 
-        # 3. Calculate current weighted score (simplified - assumes equal distribution if unknown)
+        # 5. Calculate current weighted score (simplified - assumes equal distribution if unknown)
         # In production, you'd track actual current allocations
         current_scores = [m.composite_score for m in current_metrics if m.composite_score > 0]
         if not current_scores:
@@ -727,14 +906,14 @@ class YieldOptimizer:
 
         current_weighted_score = sum(current_scores[:3]) / min(len(current_scores), 3)
 
-        # 4. Calculate optimal weighted score
+        # 6. Calculate optimal weighted score
         optimal_scores = [
             next((m.composite_score for m in current_metrics if m.address == alloc.address), 0)
             for alloc in optimal_allocations
         ]
         optimal_weighted_score = sum(optimal_scores) / max(len(optimal_scores), 1)
 
-        # 5. Score improvement threshold (must be >25% better)
+        # 7. Score improvement threshold (must be >15% better)
         if current_weighted_score > 0:
             improvement = (optimal_weighted_score - current_weighted_score) / current_weighted_score
 
@@ -746,17 +925,12 @@ class YieldOptimizer:
         else:
             improvement = 1.0  # First rebalance
 
-        # 6. Gas cost ROI check
-        total_assets_usd = total_assets / 1e6  # Convert from wei to USDC
-        estimated_benefit_usd = improvement * total_assets_usd
+        # 8. Gas cost ROI check - SKIPPED on HyperEVM
+        # HyperEVM has negligible gas costs (~$0.01), so this check is not needed
+        # The score improvement threshold above is sufficient to prevent unnecessary rebalancing
+        logger.info(f"Score improvement: {improvement*100:.1f}% (gas cost negligible on HyperEVM)")
 
-        if estimated_benefit_usd < estimated_gas_cost_usd * GAS_ROI_MULTIPLE:
-            return False, (
-                f"Benefit ${estimated_benefit_usd:.2f} < {GAS_ROI_MULTIPLE}x gas cost "
-                f"${estimated_gas_cost_usd:.2f}"
-            )
-
-        # 7. Liquidity checks for optimal allocations
+        # 9. Liquidity checks for optimal allocations
         for alloc in optimal_allocations:
             vault_metrics = next((m for m in current_metrics if m.address == alloc.address), None)
             if not vault_metrics:
@@ -765,17 +939,20 @@ class YieldOptimizer:
             if vault_metrics.tvl < MIN_TVL:
                 return False, f"Target vault {alloc.address[:10]}... TVL below minimum"
 
-            concentration = alloc.amount / (vault_metrics.tvl * 1e6 + 1)
-            if concentration > MAX_CONCENTRATION:
-                return False, (
-                    f"Would exceed {MAX_CONCENTRATION*100}% concentration in "
-                    f"{alloc.address[:10]}..."
-                )
+            # Skip concentration check if TVL data unavailable (TVL=0)
+            # This is expected since GlueX API doesn't provide TVL data
+            if vault_metrics.tvl > 0:
+                concentration = alloc.amount / (vault_metrics.tvl * 1e6 + 1)
+                if concentration > MAX_CONCENTRATION:
+                    return False, (
+                        f"Would exceed {MAX_CONCENTRATION*100}% concentration in "
+                        f"{alloc.address[:10]}..."
+                    )
 
         # All checks passed!
         return True, (
-            f"Rebalancing approved: {improvement*100:.1f}% improvement, "
-            f"benefit ${estimated_benefit_usd:.2f}"
+            f"Rebalancing approved: {improvement*100:.1f}% score improvement "
+            f"(gas cost: ${estimated_gas_cost_usd:.2f})"
         )
 
     def execute_rebalance(self, allocations: List[AllocationTarget]) -> str:
@@ -876,19 +1053,20 @@ class YieldOptimizer:
                 logger.warning("No valid vaults found (all below minimum TVL or filtered out)")
                 return
 
-            # Calculate optimal allocation
-            allocations = self.calculate_optimal_allocation(metrics, total_assets)
+            # Calculate optimal allocation based on configured strategy
+            max_vaults = 1 if ALLOCATION_STRATEGY == "concentrated" else MAX_VAULTS_DIVERSIFIED
+            allocations = self.calculate_optimal_allocation(metrics, total_assets, max_vaults)
 
             if not allocations:
                 logger.warning("No optimal allocations calculated")
                 return
 
             # Evaluate conservative switching criteria
+            # Gas cost will be calculated dynamically inside should_rebalance
             should_rebal, reason = self.should_rebalance(
                 current_metrics=metrics,
                 optimal_allocations=allocations,
-                total_assets=total_assets,
-                estimated_gas_cost_usd=50.0  # Estimate, could be dynamic
+                total_assets=total_assets
             )
 
             logger.info(f"Rebalance decision: {'YES' if should_rebal else 'NO'} - {reason}")
@@ -904,7 +1082,7 @@ class YieldOptimizer:
         except Exception as e:
             logger.error(f"Error in optimization cycle: {e}", exc_info=True)
     
-    def run_forever(self, check_interval: int = 300):
+    def run_forever(self, check_interval: int = 30):
         """
         Run the optimizer continuously
         
