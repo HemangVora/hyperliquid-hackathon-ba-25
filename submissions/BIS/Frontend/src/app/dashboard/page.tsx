@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PortfolioSummary from '@/components/portfolio/PortfolioSummary';
 import PoolsTable from '@/components/portfolio/PoolsTable';
@@ -12,20 +12,42 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { usePoolData } from '@/hooks/usePoolData';
 import { useAccount } from 'wagmi';
 import { calculateTotalTVL, calculateWeightedAverageAPY } from '@/lib/api/pools';
-import { LayoutGrid, Table, RefreshCw, Plus, Minus } from 'lucide-react';
+import { LayoutGrid, Table, RefreshCw, Plus, Minus, CheckCircle, Loader2 } from 'lucide-react';
+import { useUserVaultPosition } from '@/hooks/useVault';
+import { useClaimDeposit, useClaimRedeem, useActivateAll } from '@/hooks/useVaultTransactions';
+import { toast } from 'sonner';
 
 export default function DashboardPage() {
-  const { isConnected } = useAccount();
+  const { isConnected, address, isConnecting } = useAccount();
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [selectedChain, setSelectedChain] = useState<string | null>(null);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+
+  // Wait for wallet to be fully connected before querying
+  useEffect(() => {
+    if (isConnected && address && !isConnecting) {
+      const timer = setTimeout(() => setIsReady(true), 500);
+      return () => clearTimeout(timer);
+    } else {
+      setIsReady(false);
+    }
+  }, [isConnected, address, isConnecting]);
 
   // Fetch pool data with auto-refresh
   const { pools, loading, error, refetch, lastUpdated } = usePoolData(
     { chain: selectedChain || undefined, limit: 100 },
     { autoRefresh: true }
   );
+
+  // Get user vault position for activation buttons
+  const { data: position } = useUserVaultPosition(isReady);
+
+  // Claim hooks
+  const claimDeposit = useClaimDeposit();
+  const claimRedeem = useClaimRedeem();
+  const activateAll = useActivateAll();
 
   // Calculate aggregate statistics
   const stats = useMemo(() => {
@@ -38,6 +60,70 @@ export default function DashboardPage() {
       poolCount: pools.length,
     };
   }, [pools]);
+
+  // Determine which activation button to show
+  const hasPendingDeposit = position && position.pendingDeposit > 0n;
+  const hasPendingRedeem = position && position.pendingRedeem > 0n;
+  const showActivateAll = hasPendingDeposit && hasPendingRedeem;
+  const showActivateDeposit = hasPendingDeposit && !hasPendingRedeem;
+  const showActivateRedeem = hasPendingRedeem && !hasPendingDeposit;
+
+  // Success handlers
+  useEffect(() => {
+    if (claimDeposit.isSuccess) {
+      toast.success('Deposit activated! Shares claimed successfully.');
+    }
+  }, [claimDeposit.isSuccess]);
+
+  useEffect(() => {
+    if (claimRedeem.isSuccess) {
+      toast.success('Withdrawal activated! USDC claimed successfully.');
+    }
+  }, [claimRedeem.isSuccess]);
+
+  useEffect(() => {
+    if (activateAll.isSuccess) {
+      toast.success('All claims activated successfully!');
+    }
+  }, [activateAll.isSuccess]);
+
+  // Error handlers
+  useEffect(() => {
+    if (claimDeposit.error) {
+      toast.error('Failed to activate deposit');
+    }
+    if (claimRedeem.error) {
+      toast.error('Failed to activate withdrawal');
+    }
+    if (activateAll.error) {
+      toast.error('Failed to activate all claims');
+    }
+  }, [claimDeposit.error, claimRedeem.error, activateAll.error]);
+
+  // Handler functions
+  const handleActivateDeposit = async () => {
+    try {
+      await claimDeposit.claimDeposit();
+    } catch (error) {
+      console.error('Error claiming deposit:', error);
+    }
+  };
+
+  const handleActivateRedeem = async () => {
+    try {
+      await claimRedeem.claimRedeem();
+    } catch (error) {
+      console.error('Error claiming redeem:', error);
+    }
+  };
+
+  const handleActivateAll = async () => {
+    try {
+      await activateAll.activateAll(!!hasPendingDeposit, !!hasPendingRedeem);
+    } catch (error) {
+      console.error('Error activating all:', error);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -67,6 +153,55 @@ export default function DashboardPage() {
               <Minus className="w-4 h-4" />
               <span className="hidden sm:inline">Withdraw</span>
             </button>
+
+            {/* Activate All Button */}
+            {showActivateAll && (
+              <button
+                onClick={handleActivateAll}
+                disabled={activateAll.isPending || activateAll.isConfirming}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/50 transition-all flex items-center gap-2 min-h-[44px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {activateAll.isPending || activateAll.isConfirming ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Activate All</span>
+              </button>
+            )}
+
+            {/* Activate Deposit Button */}
+            {showActivateDeposit && (
+              <button
+                onClick={handleActivateDeposit}
+                disabled={claimDeposit.isPending || claimDeposit.isConfirming}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/50 transition-all flex items-center gap-2 min-h-[44px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {claimDeposit.isPending || claimDeposit.isConfirming ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Activate Deposit</span>
+              </button>
+            )}
+
+            {/* Activate Withdrawal Button */}
+            {showActivateRedeem && (
+              <button
+                onClick={handleActivateRedeem}
+                disabled={claimRedeem.isPending || claimRedeem.isConfirming}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/50 transition-all flex items-center gap-2 min-h-[44px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {claimRedeem.isPending || claimRedeem.isConfirming ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Activate Withdrawal</span>
+              </button>
+            )}
+
             <button
               onClick={() => refetch()}
               disabled={loading}

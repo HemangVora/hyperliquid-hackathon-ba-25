@@ -171,3 +171,43 @@ export function formatUSDC(amount: bigint): string {
 export function formatShares(shares: bigint): string {
   return (Number(shares) / 1e18).toFixed(6);
 }
+
+/**
+ * Activate all pending claims (both deposits and redeems)
+ * This hook manages the sequential claiming of both deposits and withdrawals
+ */
+export function useActivateAll() {
+  const claimDepositHook = useClaimDeposit();
+  const claimRedeemHook = useClaimRedeem();
+
+  const activateAll = async (hasPendingDeposit: boolean, hasPendingRedeem: boolean) => {
+    try {
+      // Claim deposit first if pending
+      if (hasPendingDeposit) {
+        await claimDepositHook.claimDeposit();
+        // Wait for confirmation before proceeding to next claim
+        if (claimDepositHook.hash) {
+          // The isConfirming state will handle the loading state
+        }
+      }
+
+      // Claim redeem if pending
+      if (hasPendingRedeem) {
+        await claimRedeemHook.claimRedeem();
+      }
+    } catch (error) {
+      console.error('Error activating all:', error);
+      throw error;
+    }
+  };
+
+  return {
+    activateAll,
+    isPending: claimDepositHook.isPending || claimRedeemHook.isPending,
+    isConfirming: claimDepositHook.isConfirming || claimRedeemHook.isConfirming,
+    isSuccess: claimDepositHook.isSuccess && claimRedeemHook.isSuccess,
+    error: claimDepositHook.error || claimRedeemHook.error,
+    depositHash: claimDepositHook.hash,
+    redeemHash: claimRedeemHook.hash,
+  };
+}
