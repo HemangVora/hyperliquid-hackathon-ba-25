@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "./YieldOptimizerWithSwap.sol";
+import "./SwapModule.sol";
 
 /**
  * @title ConfigureYieldOptimizerWithSwap
@@ -41,6 +42,7 @@ contract ConfigureYieldOptimizerWithSwap is Script {
         address operator = vm.envOr("OPERATOR_ADDRESS", address(0));
 
         YieldOptimizerWithSwap optimizer = YieldOptimizerWithSwap(vaultAddress);
+        SwapModule swapModule = SwapModule(address(optimizer.swapModule()));
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -54,8 +56,8 @@ contract ConfigureYieldOptimizerWithSwap is Script {
             console.log("Operator set to:", operator);
         }
 
-        // Set conservative slippage (0.5%)
-        optimizer.setDefaultSlippage(50);
+        // Set conservative slippage (0.5%) on SwapModule
+        swapModule.setDefaultSlippage(50);
         console.log("Default slippage set to: 0.5%");
 
         vm.stopBroadcast();
@@ -64,6 +66,6 @@ contract ConfigureYieldOptimizerWithSwap is Script {
         console.log("Configuration complete!");
         console.log("Performance fee (bps):", optimizer.performanceFee());
         console.log("Rebalance delay (secs):", optimizer.rebalanceDelay());
-        console.log("Default slippage (bps):", optimizer.defaultSlippageBps());
+        console.log("Default slippage (bps):", swapModule.defaultSlippageBps());
     }
 }

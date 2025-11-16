@@ -3,11 +3,13 @@ src = "."
 out = "out"
 libs = ["lib"]
 solc_version = "0.8.24"
+auto_detect_solc = true
 
 # Optimizer settings - optimize for deployment size (low runs = smaller bytecode)
 # via_ir enabled to reduce deployment gas costs
+# Using 1 run to minimize bytecode size for deployment
 optimizer = true
-optimizer_runs = 200
+optimizer_runs = 1
 via_ir = true
 
 # EVM version - use cancun (matches network)
@@ -22,17 +24,9 @@ remappings = [
 ignored_error_codes = [5574]  # Ignore "contract code size" warnings
 fs_permissions = [{ access = "read", path = "./"}]
 
-# Exclude files requiring Solidity >= 0.8.26
-ignored_file_paths = [
-    "lib/openzeppelin-contracts/certora",
-    "lib/openzeppelin-contracts/contracts/account",
-    "lib/openzeppelin-contracts/contracts/mocks",
-    "lib/openzeppelin-contracts/contracts/utils/RLP.sol",
-    "lib/openzeppelin-contracts/contracts/utils/cryptography/signers",
-    "lib/openzeppelin-contracts/contracts/utils/draft-InteroperableAddress.sol",
-    "lib/openzeppelin-contracts/contracts/crosschain",
-    "lib/openzeppelin-contracts/test"
-]
+# Don't include test and certora files in compilation
+sparse_mode = false
+skip = ["**/test/**", "**/certora/**", "**/mocks/**"]
 
 [rpc_endpoints]
 hyperliquid_mainnet = "https://rpc.hyperliquid.xyz/evm"

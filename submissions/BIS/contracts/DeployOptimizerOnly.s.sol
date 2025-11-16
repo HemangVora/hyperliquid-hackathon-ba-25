@@ -3,16 +3,15 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "./YieldOptimizerWithSwap.sol";
-import "./SwapModule.sol";
 
 /**
- * @title DeployYieldOptimizerWithSwap_Split
- * @notice Deployment script - DEPLOY ONLY, configure separately
+ * @title DeployOptimizerOnly
+ * @notice Deploy ONLY YieldOptimizer - requires SwapModule address
  */
-contract DeployYieldOptimizerWithSwap_Split is Script {
+contract DeployOptimizerOnly is Script {
     function run() external {
         address asset = vm.envAddress("ASSET_ADDRESS");
-        address glueXRouter = vm.envAddress("GLUEX_ROUTER_ADDRESS");
+        address swapModule = vm.envAddress("SWAP_MODULE_ADDRESS");
 
         // Read deployer private key
         string memory privateKeyStr = vm.envString("PRIVATE_KEY");
@@ -33,37 +32,23 @@ contract DeployYieldOptimizerWithSwap_Split is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy SwapModule first
-        SwapModule swapModule = new SwapModule(
-            glueXRouter,
-            50 // 0.5% default slippage
-        );
-
-        console.log("=== SwapModule Deployed ===");
-        console.log("SwapModule Address:", address(swapModule));
-        console.log("GlueX Router:", glueXRouter);
-        console.log("");
-
-        // ONLY DEPLOY - No configuration to avoid gas limit
+        // Deploy ONLY YieldOptimizer
         YieldOptimizerWithSwap optimizer = new YieldOptimizerWithSwap(
             asset,
-            address(swapModule),
+            swapModule,
             "BIS Yield Optimizer V2",
             "BIS-YO-V2"
         );
 
-        // Authorize optimizer to use swap module
-        swapModule.setAuthorizedCaller(address(optimizer), true);
-        console.log("Authorized optimizer in SwapModule");
-
         vm.stopBroadcast();
 
-        console.log("");
-        console.log("=== YieldOptimizer with Swap Deployed ===");
+        console.log("=== YieldOptimizer Deployed ===");
         console.log("Contract Address:", address(optimizer));
         console.log("Asset:", asset);
-        console.log("SwapModule:", address(swapModule));
+        console.log("SwapModule:", swapModule);
         console.log("");
-        console.log("Next: Run configure script to whitelist vaults");
+        console.log("SAVE THIS ADDRESS! You'll need it for configuration.");
+        console.log("");
+        console.log("Next: Authorize and configure with separate scripts");
     }
 }
