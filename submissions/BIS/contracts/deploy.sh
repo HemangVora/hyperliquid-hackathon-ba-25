@@ -22,7 +22,7 @@ echo "Using RPC: $RPC_URL"
 echo ""
 
 # Step 1: Deploy Contract
-echo "Step 1: Deploying YieldOptimizerSimple contract..."
+echo "Step 1: Deploying DeployYieldOptimizer contract..."
 echo "This will deploy the contract without any vault configuration"
 echo ""
 

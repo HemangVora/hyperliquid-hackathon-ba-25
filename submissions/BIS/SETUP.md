@@ -204,6 +204,22 @@ ps aux | grep yield_optimizer
 tail -f optimizer.log
 ```
 
+### Understanding Deposits & Withdrawals
+
+The vault uses **ERC-7540 async deposit/redeem pattern** for gas-efficient batch operations:
+
+**Deposit Flow (2 steps):**
+
+1. `requestDeposit(amount)` - Request a deposit, transfer USDC to vault
+2. `claimDeposit()` - Claim your vault shares after processing
+
+**Withdrawal Flow (2 steps):**
+
+1. `requestRedeem(shares)` - Request to redeem your shares
+2. `claimRedeem()` - Claim your USDC after processing
+
+**Why 2 steps?** This allows the vault to batch multiple user operations together, making it more gas-efficient and preventing front-running during rebalancing.
+
 ### Step 8: Test User Flow
 
 ```bash
@@ -217,22 +233,66 @@ cast send $USDC_ADDRESS \
   --private-key $PRIVATE_KEY \
   --rpc-url $HYPERLIQUID_RPC_URL
 
-# 2. Deposit USDC (1000 USDC with 6 decimals)
+# 2. Request deposit (100 USDC = 100000 with 6 decimals)
 cast send $VAULT_ADDRESS \
   "requestDeposit(uint256)" \
   100000 \
   --private-key $PRIVATE_KEY \
   --rpc-url $HYPERLIQUID_RPC_URL
 
-# 3. Check vault shares received
+# 3. Claim your deposit to receive vault shares
+cast send $VAULT_ADDRESS \
+  "claimDeposit()" \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# 4. Check vault shares received
 cast call $VAULT_ADDRESS \
   "balanceOf(address)(uint256)" \
   $USER_ADDRESS \
   --rpc-url $HYPERLIQUID_RPC_URL
 
-# 4. Check total assets in vault
+# 5. Check total assets in vault
 cast call $VAULT_ADDRESS \
   "totalAssets()(uint256)" \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# 6. Request withdrawal (redeem shares for USDC)
+# First, request redemption with your share amount
+cast send $VAULT_ADDRESS \
+  "requestRedeem(uint256)" \
+  1 \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# 7. Claim your withdrawn assets (after redemption is processed)
+cast send $VAULT_ADDRESS \
+  "claimRedeem()" \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# 8. Verify USDC balance after withdrawal
+cast call $USDC_ADDRESS \
+  "balanceOf(address)(uint256)" \
+  $USER_ADDRESS \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# Helper: Check your pending deposit request
+cast call $VAULT_ADDRESS \
+  "pendingDepositRequests(address)(uint256)" \
+  $USER_ADDRESS \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# Helper: Check your pending redeem request
+cast call $VAULT_ADDRESS \
+  "pendingRedeemRequests(address)(uint256)" \
+  $USER_ADDRESS \
+  --rpc-url $HYPERLIQUID_RPC_URL
+
+# Helper: Convert shares to assets (to see how much USDC you'll get)
+cast call $VAULT_ADDRESS \
+  "convertToAssets(uint256)(uint256)" \
+  <YOUR_SHARE_AMOUNT> \
   --rpc-url $HYPERLIQUID_RPC_URL
 ```
 

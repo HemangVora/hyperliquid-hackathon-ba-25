@@ -6,14 +6,13 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IVault.sol";
-import "./IGlueXRouter.sol";
 
 /**
- * @title YieldOptimizer
- * @notice A yield optimization vault that automatically reallocates assets across whitelisted vaults
- * @dev Implements ERC-7540 async deposit/redeem pattern for gas-efficient batch operations
+ * @title YieldOptimizerSimple (Fixed)
+ * @notice A simplified yield optimization vault with instant deposits/withdrawals - WITH FIXES
+ * @dev Fixed version that handles vault errors gracefully
  */
-contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
+contract YieldOptimizerSimpleFixed is ERC20, Ownable, ReentrancyGuard {
     // ============================================
     // STATE VARIABLES
     // ============================================
@@ -21,35 +20,14 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
     /// @notice The underlying asset (e.g., USDC, USDT)
     IERC20 public immutable asset;
 
-    /// @notice GlueX Router for executing swaps/reallocations
-    IGlueXRouter public glueXRouter;
-
     /// @notice Mapping of whitelisted vaults that can receive allocations
     mapping(address => bool) public whitelistedVaults;
 
-    /// @notice Array of all whitelisted vault addresses
-    address[] public vaultList;
-
-    /// @notice Current active allocations: vault => amount
-    mapping(address => uint256) public allocations;
+    /// @notice Array of all whitelisted vault addresses (used for iteration only)
+    address[] private vaultList;
 
     /// @notice Operator address authorized to execute rebalancing
     address public operator;
-
-    /// @notice Pending deposit requests (ERC-7540 pattern)
-    mapping(address => uint256) public pendingDepositRequests;
-
-    /// @notice Pending redemption requests (ERC-7540 pattern)
-    mapping(address => uint256) public pendingRedeemRequests;
-
-    /// @notice Total pending deposits waiting to be processed
-    uint256 public totalPendingDeposits;
-
-    /// @notice Total pending redemptions waiting to be processed
-    uint256 public totalPendingRedeems;
-
-    /// @notice Epoch counter for batch processing
-    uint256 public currentEpoch;
 
     /// @notice Performance fee in basis points (e.g., 200 = 2%)
     uint256 public performanceFee;
@@ -63,23 +41,27 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
     /// @notice Timestamp of last rebalance
     uint256 public lastRebalance;
 
+    /// @notice Total value locked at last fee collection
+    uint256 public lastTVL;
+
+    /// @notice Skip performance fee collection on rebalance (emergency mode)
+    bool public skipFeeCollection;
+
     // ============================================
     // EVENTS
     // ============================================
 
-    event DepositRequested(address indexed user, uint256 assets, uint256 epoch);
-    event RedeemRequested(address indexed user, uint256 shares, uint256 epoch);
-    event DepositProcessed(
-        address indexed user,
-        uint256 assets,
-        uint256 shares
-    );
-    event RedeemProcessed(address indexed user, uint256 shares, uint256 assets);
+    event Deposited(address indexed user, uint256 assets, uint256 shares);
+    event Withdrawn(address indexed user, uint256 shares, uint256 assets);
     event VaultWhitelisted(address indexed vault, bool status);
     event Rebalanced(address[] vaults, uint256[] amounts);
     event OperatorUpdated(address indexed newOperator);
     event PerformanceFeeUpdated(uint256 newFee);
-    event FeeCollected(address indexed recipient, uint256 amount);
+    event FeeCollected(
+        address indexed recipient,
+        uint256 shares,
+        uint256 value
+    );
     event VaultError(address indexed vault, string reason);
 
     // ============================================
@@ -91,7 +73,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
     error InvalidAmount();
     error RebalanceTooSoon();
     error InvalidFee();
-    error NoPendingRequest();
+    error InsufficientBalance();
     error TransferFailed();
 
     // ============================================
@@ -110,98 +92,72 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
 
     constructor(
         address _asset,
-        address _glueXRouter,
         string memory _name,
         string memory _symbol
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         asset = IERC20(_asset);
-        glueXRouter = IGlueXRouter(_glueXRouter);
         operator = msg.sender;
         feeRecipient = msg.sender;
         performanceFee = 200; // 2% default
-        rebalanceDelay = 1 hours;
-        currentEpoch = 1;
+        rebalanceDelay = 24 hours; // Conservative switching: 24-hour minimum
+        skipFeeCollection = false;
     }
 
     // ============================================
-    // ERC-7540 ASYNC DEPOSIT/REDEEM FUNCTIONS
+    // USER FUNCTIONS
     // ============================================
 
     /**
-     * @notice Request a deposit (async, batched later)
-     * @param assets Amount of underlying asset to deposit
+     * @notice Deposit assets and receive vault shares
+     * @param assets Amount of assets to deposit
+     * @return shares Amount of shares minted
      */
-    function requestDeposit(uint256 assets) external nonReentrant {
+    function deposit(
+        uint256 assets
+    ) external nonReentrant returns (uint256 shares) {
         if (assets == 0) revert InvalidAmount();
+
+        // Calculate shares to mint
+        shares = convertToShares(assets);
 
         // Transfer assets from user
         if (!asset.transferFrom(msg.sender, address(this), assets))
             revert TransferFailed();
 
-        // Record pending deposit
-        pendingDepositRequests[msg.sender] += assets;
-        totalPendingDeposits += assets;
-
-        emit DepositRequested(msg.sender, assets, currentEpoch);
-    }
-
-    /**
-     * @notice Request a redemption (async, batched later)
-     * @param shares Amount of vault shares to redeem
-     */
-    function requestRedeem(uint256 shares) external nonReentrant {
-        if (shares == 0) revert InvalidAmount();
-        if (balanceOf(msg.sender) < shares) revert InvalidAmount();
-
-        // Transfer shares from user to vault (burned later)
-        _transfer(msg.sender, address(this), shares);
-
-        // Record pending redemption
-        pendingRedeemRequests[msg.sender] += shares;
-        totalPendingRedeems += shares;
-
-        emit RedeemRequested(msg.sender, shares, currentEpoch);
-    }
-
-    /**
-     * @notice Claim processed deposit (receive vault shares)
-     */
-    function claimDeposit() external nonReentrant {
-        uint256 assets = pendingDepositRequests[msg.sender];
-        if (assets == 0) revert NoPendingRequest();
-
-        // Calculate shares to mint
-        uint256 shares = convertToShares(assets);
-
-        // Clear pending request
-        pendingDepositRequests[msg.sender] = 0;
-
         // Mint shares to user
         _mint(msg.sender, shares);
 
-        emit DepositProcessed(msg.sender, assets, shares);
+        emit Deposited(msg.sender, assets, shares);
     }
 
     /**
-     * @notice Claim processed redemption (receive underlying assets)
+     * @notice Withdraw assets by burning vault shares
+     * @param shares Amount of shares to burn
+     * @return assets Amount of assets returned
      */
-    function claimRedeem() external nonReentrant {
-        uint256 shares = pendingRedeemRequests[msg.sender];
-        if (shares == 0) revert NoPendingRequest();
+    function withdraw(
+        uint256 shares
+    ) external nonReentrant returns (uint256 assets) {
+        if (shares == 0 || balanceOf(msg.sender) < shares)
+            revert InvalidAmount();
 
         // Calculate assets to return
-        uint256 assets = convertToAssets(shares);
+        assets = convertToAssets(shares);
 
-        // Clear pending request
-        pendingRedeemRequests[msg.sender] = 0;
+        // Burn shares
+        _burn(msg.sender, shares);
 
-        // Burn vault shares
-        _burn(address(this), shares);
+        // Check if we have enough idle assets
+        uint256 available = asset.balanceOf(address(this));
+        if (available < assets) {
+            // Need to withdraw from vaults
+            _withdrawFromVaults(assets - available);
+        }
 
         // Transfer assets to user
         if (!asset.transfer(msg.sender, assets)) revert TransferFailed();
 
-        emit RedeemProcessed(msg.sender, shares, assets);
+        emit Withdrawn(msg.sender, shares, assets);
     }
 
     // ============================================
@@ -209,10 +165,9 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
     // ============================================
 
     /**
-     * @notice Rebalance assets across vaults based on GlueX Yields API data
+     * @notice Rebalance assets across vaults (FIXED VERSION)
      * @param targetVaults Array of vault addresses to allocate to
      * @param targetAmounts Array of amounts to allocate to each vault
-     * @dev Called by operator after querying GlueX Yields API off-chain
      */
     function rebalance(
         address[] calldata targetVaults,
@@ -222,16 +177,56 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
             revert RebalanceTooSoon();
         if (targetVaults.length != targetAmounts.length) revert InvalidAmount();
 
-        // Withdraw from all current allocations
-        _withdrawAllAllocations();
+        // Collect performance fees before rebalancing (if not in emergency mode)
+        if (!skipFeeCollection) {
+            try this._collectPerformanceFeeExternal() {
+                // Fee collection succeeded
+            } catch Error(string memory reason) {
+                emit VaultError(address(0), reason);
+                // Continue with rebalance even if fee collection fails
+            } catch {
+                emit VaultError(address(0), "Fee collection failed");
+                // Continue with rebalance
+            }
+        }
 
-        // Calculate total available assets and validate
-        uint256 availableAssets = asset.balanceOf(address(this));
+        // Withdraw from all current allocations (with error handling)
+        for (uint256 i = 0; i < vaultList.length; i++) {
+            address vault = vaultList[i];
+            if (whitelistedVaults[vault]) {
+                try IVault(vault).balanceOf(address(this)) returns (
+                    uint256 shares
+                ) {
+                    if (shares > 0) {
+                        try
+                            IVault(vault).redeem(
+                                shares,
+                                address(this),
+                                address(this)
+                            )
+                        {
+                            // Success
+                        } catch Error(string memory reason) {
+                            emit VaultError(vault, reason);
+                        } catch {
+                            emit VaultError(vault, "Redeem failed");
+                        }
+                    }
+                } catch {
+                    emit VaultError(vault, "balanceOf failed");
+                }
+            }
+        }
+
+        // Calculate total available assets
+        uint256 totalAvailable = asset.balanceOf(address(this));
         uint256 totalAllocating = 0;
+
         for (uint256 i = 0; i < targetAmounts.length; i++) {
             totalAllocating += targetAmounts[i];
         }
-        if (totalAllocating > availableAssets) revert InvalidAmount();
+
+        if (totalAllocating > totalAvailable) revert InvalidAmount();
 
         // Allocate to new target vaults
         for (uint256 i = 0; i < targetVaults.length; i++) {
@@ -241,11 +236,10 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
             if (!whitelistedVaults[vault]) revert VaultNotWhitelisted();
             if (amount == 0) continue;
 
-            // Approve and deposit to vault with error handling
+            // Approve and deposit to vault
             asset.approve(vault, amount);
             try IVault(vault).deposit(amount, address(this)) {
-                // Update allocation tracking on success
-                allocations[vault] = amount;
+                // Success
             } catch Error(string memory reason) {
                 emit VaultError(vault, reason);
                 revert(reason);
@@ -256,7 +250,6 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
         }
 
         lastRebalance = block.timestamp;
-        currentEpoch++;
 
         emit Rebalanced(targetVaults, targetAmounts);
     }
@@ -269,8 +262,22 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
         uint256 shares = IVault(vault).balanceOf(address(this));
         if (shares > 0) {
             IVault(vault).redeem(shares, address(this), address(this));
-            allocations[vault] = 0;
         }
+    }
+
+    /**
+     * @notice Manually collect performance fees
+     */
+    function collectFees() external onlyOperator {
+        _collectPerformanceFee();
+    }
+
+    /**
+     * @notice External wrapper for fee collection (for try/catch)
+     */
+    function _collectPerformanceFeeExternal() external {
+        if (msg.sender != address(this)) revert Unauthorized();
+        _collectPerformanceFee();
     }
 
     // ============================================
@@ -292,6 +299,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
 
     /**
      * @notice Batch whitelist multiple vaults (e.g., GlueX vaults)
+     * @param vaults Array of vault addresses to whitelist
      */
     function batchWhitelistVaults(
         address[] calldata vaults
@@ -307,6 +315,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
 
     /**
      * @notice Update operator address
+     * @param _operator New operator address
      */
     function setOperator(address _operator) external onlyOwner {
         operator = _operator;
@@ -315,6 +324,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
 
     /**
      * @notice Update performance fee
+     * @param _fee New fee in basis points (e.g., 200 = 2%)
      */
     function setPerformanceFee(uint256 _fee) external onlyOwner {
         if (_fee > 1000) revert InvalidFee(); // Max 10%
@@ -324,6 +334,7 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
 
     /**
      * @notice Update fee recipient
+     * @param _feeRecipient New fee recipient address
      */
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         feeRecipient = _feeRecipient;
@@ -331,16 +342,18 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
 
     /**
      * @notice Update rebalance delay
+     * @param _delay New delay in seconds
      */
     function setRebalanceDelay(uint256 _delay) external onlyOwner {
         rebalanceDelay = _delay;
     }
 
     /**
-     * @notice Update GlueX Router address
+     * @notice Toggle fee collection on rebalance (emergency use)
+     * @param _skip True to skip fee collection
      */
-    function setGlueXRouter(address _router) external onlyOwner {
-        glueXRouter = IGlueXRouter(_router);
+    function setSkipFeeCollection(bool _skip) external onlyOwner {
+        skipFeeCollection = _skip;
     }
 
     // ============================================
@@ -355,11 +368,11 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
         // Assets sitting idle in the vault
         total = asset.balanceOf(address(this));
 
-        // Add assets deployed in all vaults (with error handling via staticcall)
+        // Add assets deployed in all vaults (with try/catch for view functions via assembly)
         for (uint256 i = 0; i < vaultList.length; i++) {
             address vault = vaultList[i];
             if (whitelistedVaults[vault]) {
-                // Try to get balance and convert to assets using staticcall
+                // Try to get balance and convert to assets
                 (bool success, bytes memory data) = vault.staticcall(
                     abi.encodeWithSelector(
                         IVault.balanceOf.selector,
@@ -419,100 +432,89 @@ contract YieldOptimizer is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Get list of all whitelisted vaults
+     * @notice Withdraw a specific amount from vaults (for user withdrawals)
+     * @param needed Amount of assets needed
      */
-    function getWhitelistedVaults() external view returns (address[] memory) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            if (whitelistedVaults[vaultList[i]]) count++;
-        }
+    function _withdrawFromVaults(uint256 needed) internal {
+        uint256 withdrawn = 0;
 
-        address[] memory activeVaults = new address[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            if (whitelistedVaults[vaultList[i]]) {
-                activeVaults[index] = vaultList[i];
-                index++;
-            }
-        }
-
-        return activeVaults;
-    }
-
-    /**
-     * @notice Get current allocations
-     */
-    function getCurrentAllocations()
-        external
-        view
-        returns (address[] memory, uint256[] memory)
-    {
-        address[] memory vaults = new address[](vaultList.length);
-        uint256[] memory amounts = new uint256[](vaultList.length);
-
-        for (uint256 i = 0; i < vaultList.length; i++) {
-            vaults[i] = vaultList[i];
-            amounts[i] = allocations[vaultList[i]];
-        }
-
-        return (vaults, amounts);
-    }
-
-    // ============================================
-    // INTERNAL FUNCTIONS
-    // ============================================
-
-    /**
-     * @notice Withdraw from all current vault allocations (with error handling)
-     */
-    function _withdrawAllAllocations() internal {
-        for (uint256 i = 0; i < vaultList.length; i++) {
+        for (uint256 i = 0; i < vaultList.length && withdrawn < needed; i++) {
             address vault = vaultList[i];
             if (whitelistedVaults[vault]) {
                 try IVault(vault).balanceOf(address(this)) returns (
                     uint256 shares
                 ) {
                     if (shares > 0) {
-                        try
-                            IVault(vault).redeem(
-                                shares,
-                                address(this),
-                                address(this)
-                            )
-                        {
-                            // Success
-                        } catch Error(string memory reason) {
-                            emit VaultError(vault, reason);
+                        try IVault(vault).convertToAssets(shares) returns (
+                            uint256 vaultAssets
+                        ) {
+                            uint256 toWithdraw = vaultAssets >
+                                (needed - withdrawn)
+                                ? (needed - withdrawn)
+                                : vaultAssets;
+
+                            try
+                                IVault(vault).convertToShares(toWithdraw)
+                            returns (uint256 sharesToRedeem) {
+                                try
+                                    IVault(vault).redeem(
+                                        sharesToRedeem,
+                                        address(this),
+                                        address(this)
+                                    )
+                                returns (uint256 assetsReceived) {
+                                    withdrawn += assetsReceived;
+                                } catch {
+                                    emit VaultError(
+                                        vault,
+                                        "Redeem failed in withdraw"
+                                    );
+                                }
+                            } catch {
+                                emit VaultError(
+                                    vault,
+                                    "convertToShares failed"
+                                );
+                            }
                         } catch {
-                            emit VaultError(vault, "Redeem failed");
+                            emit VaultError(vault, "convertToAssets failed");
                         }
                     }
                 } catch {
-                    emit VaultError(vault, "balanceOf failed");
+                    emit VaultError(vault, "balanceOf failed in withdraw");
                 }
-                allocations[vault] = 0;
             }
+        }
+
+        if (withdrawn < needed) {
+            revert InsufficientBalance();
         }
     }
 
     /**
-     * @notice Collect performance fees
+     * @notice Collect performance fees based on profit since last collection
      */
     function _collectPerformanceFee() internal {
         if (performanceFee == 0) return;
 
-        uint256 totalValue = totalAssets();
-        uint256 supply = totalSupply();
+        uint256 currentTVL = totalAssets();
 
-        if (supply > 0 && totalValue > supply) {
-            uint256 profit = totalValue - supply;
-            uint256 feeAmount = (profit * performanceFee) / 10000;
+        // Calculate profit since last fee collection
+        if (currentTVL > lastTVL && lastTVL > 0) {
+            uint256 profit = currentTVL - lastTVL;
+            uint256 feeInAssets = (profit * performanceFee) / 10000;
 
-            if (feeAmount > 0) {
-                uint256 feeShares = convertToShares(feeAmount);
-                _mint(feeRecipient, feeShares);
-                emit FeeCollected(feeRecipient, feeAmount);
+            if (feeInAssets > 0 && totalSupply() > 0) {
+                // Mint shares worth the fee amount to fee recipient
+                uint256 feeShares = (feeInAssets * totalSupply()) / currentTVL;
+                if (feeShares > 0) {
+                    _mint(feeRecipient, feeShares);
+                    emit FeeCollected(feeRecipient, feeShares, feeInAssets);
+                }
             }
         }
+
+        // Update last TVL
+        lastTVL = currentTVL;
     }
 }
