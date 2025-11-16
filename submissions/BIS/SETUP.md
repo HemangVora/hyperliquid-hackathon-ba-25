@@ -40,6 +40,8 @@ git --version
 3. Generate API key
 4. Save your API key securely
 
+> 📖 **For detailed GlueX Router API integration guide, see:** [GLUEX_ROUTER_INTEGRATION.md](./GLUEX_ROUTER_INTEGRATION.md)
+
 **HyperEVM Setup:**
 
 1. Get HyperEVM Mainnet RPC URL: `https://rpc.hyperliquid.xyz/evm`

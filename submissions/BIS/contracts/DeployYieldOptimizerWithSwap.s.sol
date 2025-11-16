@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "./YieldOptimizerWithSwap.sol";
+import "./SwapModule.sol";
 
 /**
  * @title DeployYieldOptimizerWithSwap
@@ -43,10 +44,21 @@ contract DeployYieldOptimizerWithSwap is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
+        // Deploy SwapModule first
+        SwapModule swapModule = new SwapModule(
+            glueXRouter,
+            50 // 0.5% default slippage
+        );
+
+        console.log("=== SwapModule Deployed ===");
+        console.log("SwapModule Address:", address(swapModule));
+        console.log("GlueX Router:", glueXRouter);
+        console.log("");
+
         // Deploy YieldOptimizerWithSwap
         YieldOptimizerWithSwap optimizer = new YieldOptimizerWithSwap(
             asset,
-            glueXRouter,
+            address(swapModule),
             "BIS Yield Optimizer V2",
             "BIS-YO-V2"
         );
@@ -54,7 +66,11 @@ contract DeployYieldOptimizerWithSwap is Script {
         console.log("=== YieldOptimizer with Swap Deployed ===");
         console.log("Contract Address:", address(optimizer));
         console.log("Asset:", asset);
-        console.log("GlueX Router:", glueXRouter);
+        console.log("SwapModule:", address(swapModule));
+
+        // Authorize optimizer to use swap module
+        swapModule.setAuthorizedCaller(address(optimizer), true);
+        console.log("Authorized optimizer in SwapModule");
 
         // Whitelist all GlueX vaults (including multi-token vaults)
         for (uint256 i = 0; i < glueXVaults.length; i++) {
@@ -68,19 +84,18 @@ contract DeployYieldOptimizerWithSwap is Script {
             console.log("Operator set to:", operator);
         }
 
-        // Set conservative slippage (0.5%)
-        optimizer.setDefaultSlippage(50);
-        console.log("Default slippage set to: 0.5%");
-
         vm.stopBroadcast();
 
         console.log("");
+        console.log("=== Configuration ===");
         console.log("Performance fee (bps):", optimizer.performanceFee());
         console.log("Rebalance delay (secs):", optimizer.rebalanceDelay());
-        console.log("Default slippage (bps):", optimizer.defaultSlippageBps());
+        console.log("Default slippage (bps):", swapModule.defaultSlippageBps());
         console.log("");
         console.log(
             "Deployment complete! Contract can now swap tokens automatically."
         );
+        console.log("SwapModule:", address(swapModule));
+        console.log("YieldOptimizer:", address(optimizer));
     }
 }

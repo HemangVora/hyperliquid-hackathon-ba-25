@@ -376,11 +376,36 @@ class GlueXClient:
         order_type: str,
         input_amount: Optional[str] = None,
         output_amount: Optional[str] = None,
+        slippage_bps: int = 50,  # 0.5% default slippage
     ) -> Dict:
         """
-        Get price quote with execution calldata and simulation.
+        Get price quote with execution calldata and simulation for Router API.
 
         Requires API key via x-api-key header.
+
+        Args:
+            chain_id: Target chain (e.g., "hyperevm", "ethereum")
+            input_token: Address of token to swap from
+            output_token: Address of token to swap to
+            user_address: User's wallet address
+            output_receiver: Address to receive output tokens
+            unique_pid: Unique transaction identifier
+            order_type: "SELL" (exact input) or "BUY" (exact output)
+            input_amount: Amount to sell (required for SELL)
+            output_amount: Amount to buy (required for BUY)
+            slippage_bps: Slippage tolerance in basis points (50 = 0.5%)
+
+        Returns:
+            {
+                "inputAmount": "1000000",        # Amount in
+                "outputAmount": "995000",         # Expected out
+                "minOutputAmount": "990000",      # Min with slippage
+                "route": [...],                   # Routing path
+                "calldata": "0x...",             # Execution calldata
+                "to": "0x...",                   # Router contract address
+                "value": "0",                    # Native token value
+                "estimatedGas": "150000"         # Estimated gas
+            }
 
         Docs: https://docs.gluex.xyz/api-reference/router-api/post-quote
         """
@@ -395,6 +420,7 @@ class GlueXClient:
             "outputReceiver": output_receiver,
             "uniquePID": unique_pid,
             "orderType": order_type,
+            "slippageBps": slippage_bps,
         }
 
         if order_type == "SELL":
@@ -406,7 +432,10 @@ class GlueXClient:
                 raise ValueError("output_amount required for BUY orders")
             payload["outputAmount"] = output_amount
 
-        logger.info(f"Getting execution quote on {chain_id}")
+        logger.info(
+            f"Getting Router quote: {input_token[:10]}... -> {output_token[:10]}... "
+            f"on {chain_id} (order: {order_type})"
+        )
         return self._make_request("POST", f"{self.router_api_url}/quote", data=payload, use_cache=False)
 
     # ============================================
@@ -444,6 +473,68 @@ class GlueXClient:
         """
         logger.info(f"Fetching exchange rates for {len(pairs)} pairs")
         return self._make_request("POST", self.exchange_rates_url, data=pairs)
+
+    # ============================================
+    # Vault Reallocation Methods
+    # ============================================
+
+    def get_reallocation_quote(
+        self,
+        from_token: str,
+        to_token: str,
+        amount: int,
+        user_address: str,
+        chain_id: str = "hyperevm",
+        slippage_bps: int = 50,
+    ) -> Dict:
+        """
+        Get optimal quote for reallocating assets between vaults.
+
+        This is a convenience wrapper around get_quote() specifically for
+        vault-to-vault reallocations.
+
+        Args:
+            from_token: Source vault's asset token address
+            to_token: Destination vault's asset token address
+            amount: Amount to reallocate (in wei)
+            user_address: Address executing the reallocation
+            chain_id: Target chain (default: "hyperevm")
+            slippage_bps: Slippage tolerance in basis points
+
+        Returns:
+            Quote response with routing information, or empty dict if tokens are the same
+        """
+        # If same token, no swap needed - direct transfer
+        if from_token.lower() == to_token.lower():
+            logger.info(f"Same token detected - no swap needed for reallocation")
+            return {
+                "needsSwap": False,
+                "inputToken": from_token,
+                "outputToken": to_token,
+                "inputAmount": str(amount),
+                "outputAmount": str(amount),
+                "calldata": "0x",
+            }
+
+        # Different tokens - need Router quote for optimal swap
+        logger.info(f"Getting reallocation quote: {amount / 1e6:.2f} tokens")
+        try:
+            quote = self.get_quote(
+                chain_id=chain_id,
+                input_token=from_token,
+                output_token=to_token,
+                user_address=user_address,
+                output_receiver=user_address,
+                unique_pid=f"realloc-{int(time.time())}-{from_token[:8]}",
+                order_type="SELL",
+                input_amount=str(amount),
+                slippage_bps=slippage_bps,
+            )
+            quote["needsSwap"] = True
+            return quote
+        except Exception as e:
+            logger.error(f"Failed to get reallocation quote: {e}")
+            return {}
 
     # ============================================
     # Convenience Methods

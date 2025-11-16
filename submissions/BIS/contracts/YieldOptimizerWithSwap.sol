@@ -6,12 +6,43 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IVault.sol";
-import "./IGlueXRouter.sol";
+import "./SwapModule.sol";
 
 /**
  * @title YieldOptimizerWithSwap
  * @notice Enhanced yield optimizer with automatic token swapping via GlueX Router
  * @dev Automatically swaps tokens when depositing to vaults that require different assets
+ *
+ * == GlueX Router API Integration ==
+ *
+ * This contract integrates with GlueX APIs for optimal yield optimization:
+ *
+ * 1. **GlueX Yields API** (Off-chain):
+ *    - Backend fetches real-time APY data for all vaults
+ *    - Calculates optimal allocations based on yield, risk, and liquidity
+ *    - Endpoint: https://yield-api.gluex.xyz
+ *    - Used in: yield_optimizer.py::get_vault_metrics()
+ *
+ * 2. **GlueX Router API** (Off-chain + On-chain):
+ *    - Off-chain: Backend gets quotes for vault-to-vault reallocations
+ *    - Off-chain: Router API finds optimal swap paths between vault tokens
+ *    - On-chain: Contract executes swaps via IGlueXRouter interface
+ *    - Endpoint: https://router.gluex.xyz/v1/quote
+ *    - Used in: yield_optimizer.py::build_reallocation_plan()
+ *
+ * 3. **Reallocation Flow with Router**:
+ *    a) Backend identifies optimal vault allocation via Yields API
+ *    b) Backend builds reallocation plan via Router API quotes
+ *    c) Backend calls rebalance() with target vaults and amounts
+ *    d) Contract withdraws from current vaults → converts to base asset
+ *    e) Contract swaps base asset to required tokens via GlueX Router
+ *    f) Contract deposits to target vaults
+ *
+ * Benefits of Router Integration:
+ * - Optimal swap routing across liquidity sources
+ * - Minimal slippage on token conversions
+ * - Gas-efficient multi-hop swaps
+ * - Support for any ERC-4626 vault regardless of underlying token
  */
 contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
     // ============================================
@@ -21,8 +52,8 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
     /// @notice The base asset for user deposits (e.g., USDC)
     IERC20 public immutable asset;
 
-    /// @notice GlueX Router for executing swaps
-    IGlueXRouter public glueXRouter;
+    /// @notice Swap module for token swapping operations
+    SwapModule public swapModule;
 
     /// @notice Mapping of whitelisted vaults
     mapping(address => bool) public whitelistedVaults;
@@ -66,9 +97,6 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
     /// @notice Timestamp of last rebalance
     uint256 public lastRebalance;
 
-    /// @notice Default slippage tolerance in basis points (e.g., 50 = 0.5%)
-    uint256 public defaultSlippageBps;
-
     // ============================================
     // EVENTS
     // ============================================
@@ -87,12 +115,7 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
     event PerformanceFeeUpdated(uint256 newFee);
     event FeeCollected(address indexed recipient, uint256 amount);
     event VaultError(address indexed vault, string reason);
-    event TokenSwapped(
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut
-    );
+    event SwapModuleUpdated(address indexed newModule);
 
     // ============================================
     // ERRORS
@@ -105,7 +128,6 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
     error InvalidFee();
     error NoPendingRequest();
     error TransferFailed();
-    error SwapFailed();
 
     // ============================================
     // MODIFIERS
@@ -123,17 +145,16 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
 
     constructor(
         address _asset,
-        address _glueXRouter,
+        address _swapModule,
         string memory _name,
         string memory _symbol
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         asset = IERC20(_asset);
-        glueXRouter = IGlueXRouter(_glueXRouter);
+        swapModule = SwapModule(_swapModule);
         operator = msg.sender;
         feeRecipient = msg.sender;
         performanceFee = 200; // 2% default
         rebalanceDelay = 1 hours;
-        defaultSlippageBps = 50; // 0.5% default slippage
         currentEpoch = 1;
     }
 
@@ -257,7 +278,7 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Internal function to swap tokens via GlueX Router
+     * @notice Internal function to swap tokens via SwapModule
      * @param tokenIn Input token address
      * @param tokenOut Output token address
      * @param amountIn Amount to swap
@@ -268,26 +289,11 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
         address tokenOut,
         uint256 amountIn
     ) internal returns (uint256 amountOut) {
-        // Get quote from GlueX Router
-        IGlueXRouter.QuoteRequest memory request = IGlueXRouter.QuoteRequest({
-            tokenIn: tokenIn,
-            tokenOut: tokenOut,
-            amountIn: amountIn,
-            slippageBps: defaultSlippageBps,
-            receiver: address(this)
-        });
+        // Approve swap module to spend tokens
+        IERC20(tokenIn).approve(address(swapModule), amountIn);
 
-        IGlueXRouter.QuoteResponse memory quote = glueXRouter.getQuote(request);
-
-        // Approve router to spend tokens
-        IERC20(tokenIn).approve(address(glueXRouter), amountIn);
-
-        // Execute swap
-        amountOut = glueXRouter.executeSwap(quote);
-
-        if (amountOut < quote.minAmountOut) revert SwapFailed();
-
-        emit TokenSwapped(tokenIn, tokenOut, amountIn, amountOut);
+        // Execute swap via module (tokens returned to this contract)
+        amountOut = swapModule.executeSwap(tokenIn, tokenOut, amountIn, 0);
     }
 
     /**
@@ -401,13 +407,9 @@ contract YieldOptimizerWithSwap is ERC20, Ownable, ReentrancyGuard {
         rebalanceDelay = _delay;
     }
 
-    function setGlueXRouter(address _router) external onlyOwner {
-        glueXRouter = IGlueXRouter(_router);
-    }
-
-    function setDefaultSlippage(uint256 _slippageBps) external onlyOwner {
-        require(_slippageBps <= 1000, "Slippage too high"); // Max 10%
-        defaultSlippageBps = _slippageBps;
+    function setSwapModule(address _swapModule) external onlyOwner {
+        swapModule = SwapModule(_swapModule);
+        emit SwapModuleUpdated(_swapModule);
     }
 
     // ============================================

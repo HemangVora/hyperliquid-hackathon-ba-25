@@ -110,7 +110,8 @@ def get_rebalance_status():
 
         # Get whitelisted vaults and calculate metrics
         try:
-            whitelisted = opt.vault.functions.getWhitelistedVaults().call()
+            allocations_result = opt.vault.functions.getAllocations().call()
+            whitelisted = allocations_result[0]  # First element is vault addresses
             metrics = opt.get_vault_metrics(whitelisted)
 
             # Calculate current and target Sharpe ratios
@@ -190,7 +191,8 @@ def get_rebalance_decision():
         opt = get_optimizer()
 
         # Get whitelisted vaults
-        whitelisted = opt.vault.functions.getWhitelistedVaults().call()
+        allocations_result = opt.vault.functions.getAllocations().call()
+        whitelisted = allocations_result[0]  # First element is vault addresses
 
         # Get total assets
         total_assets = opt.vault.functions.totalAssets().call()
@@ -330,7 +332,8 @@ def get_rebalance_conditions():
         # Condition 2: Improvement threshold met
         # Get metrics and calculate potential improvement
         try:
-            whitelisted = opt.vault.functions.getWhitelistedVaults().call()
+            allocations_result = opt.vault.functions.getAllocations().call()
+            whitelisted = allocations_result[0]  # First element is vault addresses
             total_assets = opt.vault.functions.totalAssets().call()
             total_aum = total_assets / 1e6
             metrics = opt.get_vault_metrics(whitelisted)

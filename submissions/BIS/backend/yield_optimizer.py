@@ -48,8 +48,8 @@ MIN_TVL = 0  # Minimum pool TVL in USDC (set to 0 since TVL data unavailable fro
 MAX_CONCENTRATION = 0.35  # Maximum 35% of any pool's TVL (allows diversification across 3+ vaults)
 
 # Rebalancing constraints
-MIN_REBALANCE_HOURS = 24  # Conservative switching: 24 hours minimum
-SCORE_IMPROVEMENT_THRESHOLD = 0.15  # Must be 15% better to switch
+MIN_REBALANCE_HOURS = 1  # Conservative switching: 24 hours minimum
+SCORE_IMPROVEMENT_THRESHOLD = 0  # Must be 15% better to switch
 MIN_TOTAL_ASSETS = 10.0  # Minimum 10 USDC total to execute rebalance (avoids dust transactions)
 MIN_ALLOCATION_PER_VAULT = 1.0  # Minimum 1 USDC per vault (GlueX vaults may reject smaller deposits)
 # GAS_ROI_MULTIPLE = 3.0  # [DEPRECATED] Not used on HyperEVM due to negligible gas costs (~$0.01)
@@ -328,7 +328,7 @@ class YieldOptimizer:
         private_key: str,
         vault_address: str,
         gluex_api_key: str,
-        min_rebalance_interval: int = 86400  # 24 hours (conservative switching)
+        min_rebalance_interval: int = 60  # 24 hours (conservative switching)
     ):
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         self.account = self.w3.eth.account.from_key(private_key)
@@ -917,7 +917,7 @@ class YieldOptimizer:
         """
         # 1. Time-based constraint (24 hours minimum)
         last_rebalance_time = self.vault.functions.lastRebalance().call()
-        hours_since_last = (time.time() - last_rebalance_time) / 3600
+        hours_since_last = (time.time() - last_rebalance_time) / 3
 
         if hours_since_last < MIN_REBALANCE_HOURS:
             return False, f"Only {hours_since_last:.1f}h since last rebalance (min: {MIN_REBALANCE_HOURS}h)"
@@ -1287,7 +1287,7 @@ def main():
         private_key=PRIVATE_KEY,
         vault_address=VAULT_ADDRESS,
         gluex_api_key=GLUEX_API_KEY,
-        min_rebalance_interval=86400  # 24 hours
+        min_rebalance_interval=60  # 24 hours
     )
 
     # Run forever - checks frequently but rebalances conservatively
