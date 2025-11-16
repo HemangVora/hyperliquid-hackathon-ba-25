@@ -4,18 +4,34 @@ import { useAccount } from 'wagmi';
 import { Wallet, TrendingUp, Clock, DollarSign } from 'lucide-react';
 import { useUserVaultPosition, useConvertToAssets } from '@/hooks/useVault';
 import { formatUSDC, formatShares } from '@/hooks/useVaultTransactions';
+import { useEffect, useState } from 'react';
 
 export function UserVaultPosition() {
-  const { address, isConnected } = useAccount();
-  const { data: position, isLoading } = useUserVaultPosition();
+  const { address, isConnected, isConnecting } = useAccount();
+  const [isReady, setIsReady] = useState(false);
 
-  // Convert shares to USDC value
-  const { data: shareValue } = useConvertToAssets(position?.shares);
+  // Wait for wallet to be fully connected before querying
+  useEffect(() => {
+    if (isConnected && address && !isConnecting) {
+      // Small delay to ensure connection is stable
+      const timer = setTimeout(() => setIsReady(true), 500);
+      return () => clearTimeout(timer);
+    } else {
+      setIsReady(false);
+    }
+  }, [isConnected, address, isConnecting]);
+
+  const { data: position, isLoading } = useUserVaultPosition(isReady);
+
+  // Convert shares to USDC value (only when ready)
+  const { data: shareValue } = useConvertToAssets(
+    isReady && position?.shares ? position.shares : undefined
+  );
   const { data: pendingDepositValue } = useConvertToAssets(
-    position?.pendingDeposit ? position.pendingDeposit / 1000000n : undefined // Convert USDC to shares estimate
+    isReady && position?.pendingDeposit ? position.pendingDeposit / 1000000n : undefined
   );
 
-  if (!isConnected) {
+  if (!isConnected || isConnecting) {
     return (
       <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
@@ -29,7 +45,7 @@ export function UserVaultPosition() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || !isReady) {
     return (
       <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">

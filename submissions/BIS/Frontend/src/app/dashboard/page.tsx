@@ -5,13 +5,21 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import PortfolioSummary from '@/components/portfolio/PortfolioSummary';
 import PoolsTable from '@/components/portfolio/PoolsTable';
 import { ChainSelector } from '@/components/ui/ChainSelector';
+import { DepositModal } from '@/components/vault/DepositModal';
+import { WithdrawModal } from '@/components/vault/WithdrawModal';
+import { UserVaultPosition } from '@/components/vault/UserVaultPosition';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { usePoolData } from '@/hooks/usePoolData';
+import { useAccount } from 'wagmi';
 import { calculateTotalTVL, calculateWeightedAverageAPY } from '@/lib/api/pools';
-import { LayoutGrid, Table, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Table, RefreshCw, Plus, Minus } from 'lucide-react';
 
 export default function DashboardPage() {
+  const { isConnected } = useAccount();
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [selectedChain, setSelectedChain] = useState<string | null>(null);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
 
   // Fetch pool data with auto-refresh
   const { pools, loading, error, refetch, lastUpdated } = usePoolData(
@@ -46,6 +54,20 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setIsDepositModalOpen(true)}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/50 transition-all flex items-center gap-2 min-h-[44px] font-semibold"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Deposit</span>
+            </button>
+            <button
+              onClick={() => setIsWithdrawModalOpen(true)}
+              className="px-4 py-2 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg hover:shadow-lg hover:shadow-red-500/50 transition-all flex items-center gap-2 min-h-[44px] font-semibold"
+            >
+              <Minus className="w-4 h-4" />
+              <span className="hidden sm:inline">Withdraw</span>
+            </button>
+            <button
               onClick={() => refetch()}
               disabled={loading}
               className="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-750 transition-colors flex items-center gap-2 min-h-[44px]"
@@ -56,6 +78,21 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* User Vault Position - Only show when connected */}
+        {isConnected && (
+          <ErrorBoundary
+            fallback={
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                <p className="text-sm text-yellow-400">
+                  Unable to load your vault position. Please refresh the page or try again later.
+                </p>
+              </div>
+            }
+          >
+            <UserVaultPosition />
+          </ErrorBoundary>
+        )}
 
         {/* Portfolio Summary */}
         <PortfolioSummary
@@ -138,6 +175,16 @@ export default function DashboardPage() {
           </div>
         ) : null}
       </div>
+
+      {/* Modals */}
+      <DepositModal
+        isOpen={isDepositModalOpen}
+        onClose={() => setIsDepositModalOpen(false)}
+      />
+      <WithdrawModal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+      />
     </DashboardLayout>
   );
 }

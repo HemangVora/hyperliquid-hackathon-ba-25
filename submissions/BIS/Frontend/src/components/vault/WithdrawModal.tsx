@@ -26,8 +26,8 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<'input' | 'redeem' | 'claim'>('input');
 
-  // Fetch user position
-  const { data: position, refetch: refetchPosition } = useUserVaultPosition();
+  // Fetch user position (only when modal is open and connected)
+  const { data: position, refetch: refetchPosition } = useUserVaultPosition(isOpen && isConnected);
 
   // Calculate USDC to receive
   const sharesToRedeem = amount ? parseUnits(amount, 18) : undefined;

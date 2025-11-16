@@ -1,104 +1,111 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useAccount } from 'wagmi';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PortfolioSummary from '@/components/portfolio/PortfolioSummary';
-import PoolCard from '@/components/portfolio/PoolCard';
-import PoolsTable from '@/components/portfolio/PoolsTable';
-import EarningsChart from '@/components/portfolio/EarningsChart';
-import { mockPortfolioData } from '@/data/mockPortfolio';
-import { LayoutGrid, Table } from 'lucide-react';
-import { PoolData } from '@/lib/api/pools';
+import { UserVaultPosition } from '@/components/vault/UserVaultPosition';
+import { TransactionHistory } from '@/components/vault/TransactionHistory';
+import { useUserVaultPosition, useVaultStats, useConvertToAssets } from '@/hooks/useVault';
+import { formatUSDC } from '@/hooks/useVaultTransactions';
+import { Wallet } from 'lucide-react';
 
 export default function PortfolioPage() {
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const { address, isConnected } = useAccount();
 
-  // Convert Pool[] to PoolData[] for PoolsTable
-  const poolsAsPoolData = useMemo(() => {
-    return mockPortfolioData.pools.map((pool): PoolData => ({
-      pool_address: pool.id,
-      chain: 'ethereum', // Default chain
-      name: pool.name,
-      token_pair: pool.tokenPair,
-      tvl: pool.deposited, // Use deposited as TVL
-      apy: pool.apy,
-      risk_level: pool.riskLevel,
-      status: pool.status,
-      protocol: 'HyperGlueX'
-    }));
-  }, []);
+  // Fetch user's vault position and vault stats
+  const { data: position, isLoading: positionLoading } = useUserVaultPosition();
+  const { data: vaultStats, isLoading: statsLoading } = useVaultStats();
 
-  // Calculate average APY
-  const averageAPY = useMemo(() => {
-    if (mockPortfolioData.pools.length === 0) return 0;
-    const sum = mockPortfolioData.pools.reduce((acc, pool) => acc + pool.apy, 0);
-    return sum / mockPortfolioData.pools.length;
-  }, []);
+  // Convert shares to USDC value
+  const { data: portfolioValue } = useConvertToAssets(position?.shares);
+
+  // Calculate portfolio metrics
+  const metrics = useMemo(() => {
+    if (!position || !vaultStats || !portfolioValue) {
+      return {
+        totalValue: 0,
+        averageAPY: 0,
+        poolCount: 0,
+      };
+    }
+
+    // For now, we show the vault as a single "pool"
+    // In the future, this could show breakdown by underlying GlueX vaults
+    return {
+      totalValue: Number(portfolioValue) / 1e6, // Convert to USDC decimals
+      averageAPY: 0, // This would need historical data to calculate
+      poolCount: position.shares > 0n ? 1 : 0,
+    };
+  }, [position, vaultStats, portfolioValue]);
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Portfolio</h1>
           <p className="text-gray-400">
-            Monitor your liquidity pools and track earnings
+            Monitor your vault position and track your earnings
           </p>
         </div>
 
-        <PortfolioSummary
-          totalValue={mockPortfolioData.totalValue}
-          averageAPY={averageAPY}
-          poolCount={mockPortfolioData.pools.length}
-        />
-
-        <EarningsChart data={mockPortfolioData.dailyEarnings} />
-
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-white">Active Pools</h2>
-              <p className="text-gray-400 mt-1">
-                {mockPortfolioData.pools.length} pools generating earnings
+        {/* Not Connected State */}
+        {!isConnected && (
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-12">
+            <div className="flex flex-col items-center justify-center text-center">
+              <Wallet className="w-16 h-16 text-gray-600 mb-4" />
+              <h2 className="text-xl font-semibold text-white mb-2">
+                Connect Your Wallet
+              </h2>
+              <p className="text-gray-400 max-w-md">
+                Connect your wallet to view your portfolio, track your vault position, and see your transaction history.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-lg transition-colors ${
-                  viewMode === 'grid'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-white'
-                }`}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={`p-2 rounded-lg transition-colors ${
-                  viewMode === 'table'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-white'
-                }`}
-                aria-label="Table view"
-              >
-                <Table className="w-5 h-5" />
-              </button>
-            </div>
           </div>
+        )}
 
-          {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {mockPortfolioData.pools.map((pool) => (
-                <PoolCard key={pool.id} pool={pool} />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-              <PoolsTable pools={poolsAsPoolData} />
-            </div>
-          )}
-        </div>
+        {/* Connected - Show Portfolio */}
+        {isConnected && (
+          <>
+            {/* Portfolio Summary */}
+            <PortfolioSummary
+              totalValue={metrics.totalValue}
+              averageAPY={metrics.averageAPY}
+              poolCount={metrics.poolCount}
+            />
+
+            {/* User Position */}
+            <UserVaultPosition />
+
+            {/* Vault Stats */}
+            {vaultStats && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                  <p className="text-sm text-gray-400 mb-1">Vault TVL</p>
+                  <p className="text-2xl font-bold text-white">
+                    ${formatUSDC(vaultStats.totalAssets)}
+                  </p>
+                </div>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                  <p className="text-sm text-gray-400 mb-1">Share Price</p>
+                  <p className="text-2xl font-bold text-white">
+                    ${formatUSDC((vaultStats.sharePrice * 1000000n) / 10n ** 18n)}
+                  </p>
+                </div>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                  <p className="text-sm text-gray-400 mb-1">Performance Fee</p>
+                  <p className="text-2xl font-bold text-white">
+                    {Number(vaultStats.performanceFee) / 100}%
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Transaction History */}
+            <TransactionHistory />
+          </>
+        )}
       </div>
     </DashboardLayout>
   );

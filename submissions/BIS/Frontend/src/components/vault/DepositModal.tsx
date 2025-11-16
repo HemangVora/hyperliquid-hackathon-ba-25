@@ -27,8 +27,8 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<'input' | 'approve' | 'deposit' | 'claim'>('input');
 
-  // Fetch user position and vault stats
-  const { data: position, refetch: refetchPosition } = useUserVaultPosition();
+  // Fetch user position and vault stats (only when modal is open and connected)
+  const { data: position, refetch: refetchPosition } = useUserVaultPosition(isOpen && isConnected);
   const { data: vaultStats } = useVaultStats();
 
   // Calculate shares to receive

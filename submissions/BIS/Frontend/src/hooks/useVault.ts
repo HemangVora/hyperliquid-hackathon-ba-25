@@ -219,8 +219,9 @@ export function useVaultStats() {
 
 /**
  * Get user's complete vault position
+ * @param enabled - Whether to enable the query (default: true when address exists)
  */
-export function useUserVaultPosition() {
+export function useUserVaultPosition(enabled: boolean = true) {
   const { address } = useAccount();
 
   const { data, isLoading, error } = useReadContracts({
@@ -257,8 +258,10 @@ export function useUserVaultPosition() {
       },
     ],
     query: {
-      enabled: !!address,
+      enabled: !!address && enabled && !!CONTRACTS.YIELD_OPTIMIZER && !!CONTRACTS.USDC,
       refetchInterval: 10000,
+      retry: 3,
+      retryDelay: 1000,
     },
   });
 
