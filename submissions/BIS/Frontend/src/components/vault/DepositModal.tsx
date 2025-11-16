@@ -252,7 +252,7 @@ export function DepositModal({ isOpen, onClose }: DepositModalProps) {
                   <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg">
                     <p className="text-sm text-blue-400">
                       <strong>Note:</strong> Deposits are processed asynchronously. After requesting a
-                      deposit, you'll need to claim your shares once the operator processes the batch.
+                      deposit, you&apos;ll need to claim your shares once the operator processes the batch.
                     </p>
                   </div>
                 </>

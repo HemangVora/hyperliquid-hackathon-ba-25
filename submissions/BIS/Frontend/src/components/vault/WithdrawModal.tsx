@@ -214,7 +214,7 @@ export function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
                   <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg">
                     <p className="text-sm text-blue-400">
                       <strong>Note:</strong> Withdrawals are processed asynchronously. After requesting a
-                      withdrawal, you'll need to claim your USDC once the operator processes the batch.
+                      withdrawal, you&apos;ll need to claim your USDC once the operator processes the batch.
                     </p>
                   </div>
                 </>
