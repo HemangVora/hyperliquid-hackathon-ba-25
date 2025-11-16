@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # ==================== CONFIGURATION CONSTANTS ====================
 
 # Liquidity constraints
-MIN_TVL = 250_000  # Minimum pool TVL in USDC ($250K)
+MIN_TVL = 0  # Minimum pool TVL in USDC (set to 0 since TVL data unavailable from API)
 MAX_CONCENTRATION = 0.20  # Maximum 20% of any pool's TVL
 
 # Rebalancing constraints
@@ -105,14 +105,39 @@ class AllocationTarget:
 class GlueXClient:
     """Client for interacting with GlueX APIs"""
     
-    def __init__(self, api_key: str, base_url: str = "https://api.gluex.xyz"):
+    def __init__(self, api_key: str, base_url: str = "https://yield-api.gluex.xyz"):
         self.api_key = api_key
         self.base_url = base_url
+        # GlueX network configuration (can be overridden via env)
+        # Default to Ethereum mainnet which hosts the GlueX vaults.
+        self.chain = os.getenv("GLUEX_CHAIN", "hyperevm")
+        # Optional: specific input token (e.g. USDC) for yield calculations
+        self.input_token = os.getenv("GLUEX_INPUT_TOKEN")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         })
+    
+    @staticmethod
+    def _safe_float(value, default: float = 0.0) -> float:
+        """Safely extract a float from a value that might be nested in a dict."""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return default
+        if isinstance(value, dict):
+            # Try common keys for numeric values
+            for key in ["value", "apy", "amount", "tvl", "tvl_usd"]:
+                if key in value:
+                    return GlueXClient._safe_float(value[key], default)
+            return default
+        return default
     
     def get_historical_apy(
         self, 
@@ -124,23 +149,106 @@ class GlueXClient:
         
         Docs: https://docs.gluex.xyz/api-reference/yield-api/post-historical-apy
         """
-        try:
-            response = self.session.post(
-                f"{self.base_url}/yields/historical-apy",
-                json={
-                    "vaults": vaults,
-                    "timeframe": timeframe
+        results: Dict[str, Dict] = {}
+
+        for vault in vaults:
+            vault_lower = vault.lower()
+            normalized_vault = vault_lower
+
+            tvl_value = 0.0
+            apy_value = 0.0
+            historical_apys: List[float] = []
+
+            # 1) Fetch TVL (best effort) - Note: TVL endpoint not documented in GlueX API
+            # Keeping TVL=0 for all vaults as the /tvl endpoint returns 422 errors
+            # TODO: Check if TVL is available through another endpoint or on-chain
+            tvl_value = 0.0
+            
+            # Commenting out failing TVL fetch:
+            # tvl_payload = {
+            #     "chain": self.chain,
+            #     "pool_address": normalized_vault,
+            #     "lp_token_address": normalized_vault,
+            # }
+            # try:
+            #     tvl_response = self.session.post(
+            #         f"{self.base_url}/tvl",
+            #         json=tvl_payload,
+            #         timeout=10,
+            #     )
+            #     if tvl_response.status_code == 404:
+            #         logger.debug(f"TVL not found for vault {vault[:10]}...")
+            #     else:
+            #         tvl_response.raise_for_status()
+            #         tvl_json = tvl_response.json()
+            #         tvl_container = tvl_json.get("tvl", tvl_json)
+            #         tvl_value = self._safe_float(tvl_container, 0.0)
+            # except requests.RequestException as e:
+            #     logger.debug(f"Failed to fetch TVL for {vault}: {e}")
+
+            # 2) Fetch historical APY (required)
+            hist_payload = {
+                "chain": self.chain,
+                "pool_address": normalized_vault,
+            }
+            if self.input_token:
+                hist_payload["input_token"] = self.input_token
+
+            try:
+                hist_response = self.session.post(
+                    f"{self.base_url}/historical-apy",
+                    json=hist_payload,
+                    timeout=10,
+                )
+                hist_response.raise_for_status()
+                hist_json = hist_response.json()
+
+                # Debug: log the response to see what we're getting
+                logger.debug(f"GlueX historical APY response for {vault[:10]}...: {hist_json}")
+
+                historic_yield = hist_json.get("historic_yield") or hist_json.get("historicYield") or hist_json
+
+                if isinstance(historic_yield, dict):
+                    # Use safe_float to handle nested dicts or various types
+                    apy_raw = historic_yield.get("apy", historic_yield.get("average_apy"))
+                    apy_value = self._safe_float(apy_raw, 0.0)
+                    
+                    history = (
+                        historic_yield.get("history")
+                        or historic_yield.get("historic_apy")
+                        or historic_yield.get("points")
+                    )
+                    if isinstance(history, list):
+                        for point in history:
+                            if isinstance(point, dict) and "apy" in point:
+                                apy_point = self._safe_float(point["apy"], None)
+                                if apy_point is not None:
+                                    historical_apys.append(apy_point)
+                elif isinstance(historic_yield, list):
+                    for point in historic_yield:
+                        if isinstance(point, dict) and "apy" in point:
+                            apy_point = self._safe_float(point["apy"], None)
+                            if apy_point is not None:
+                                historical_apys.append(apy_point)
+                    if historical_apys:
+                        apy_value = historical_apys[-1]
+
+                results[vault_lower] = {
+                    "apy": apy_value,
+                    "tvl": tvl_value,
+                    "historical": historical_apys,
                 }
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            logger.info(f"Fetched APY data for {len(data)} vaults")
-            return data
-            
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch APY data: {e}")
-            return {}
+
+                tvl_display = f"${tvl_value:,.0f}" if tvl_value > 0 else "N/A"
+                logger.info(
+                    f"Fetched GlueX yields for vault {vault[:10]}... - "
+                    f"APY {apy_value:.2f}%, TVL {tvl_display}"
+                )
+
+            except requests.RequestException as e:
+                logger.error(f"Failed to fetch historical APY data for {vault}: {e}")
+
+        return results
     
     def get_quote(
         self,
@@ -155,8 +263,10 @@ class GlueXClient:
         Docs: https://docs.gluex.xyz/api-reference/router-api/post-quote
         """
         try:
+            # Router API uses a different base URL than Yield API
+            router_url = "https://router.gluex.xyz/v1"
             response = self.session.post(
-                f"{self.base_url}/router/quote",
+                f"{router_url}/quote",
                 json={
                     "tokenIn": token_in,
                     "tokenOut": token_out,
@@ -384,6 +494,11 @@ class YieldOptimizer:
         Returns:
             Score from 0.0 to 1.0 (higher is better)
         """
+        # If TVL data unavailable (0), return neutral score
+        if tvl == 0:
+            logger.debug("TVL=0, using neutral liquidity score of 0.5")
+            return 0.5  # Neutral score when TVL unknown
+        
         # Absolute TVL tier scoring
         if tvl >= 5_000_000:  # $5M+
             base_score = 1.0
@@ -904,7 +1019,7 @@ class YieldOptimizer:
         except Exception as e:
             logger.error(f"Error in optimization cycle: {e}", exc_info=True)
     
-    def run_forever(self, check_interval: int = 300):
+    def run_forever(self, check_interval: int = 30):
         """
         Run the optimizer continuously
         
