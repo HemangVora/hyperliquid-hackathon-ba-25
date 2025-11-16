@@ -236,7 +236,7 @@ cast send $USDC_ADDRESS \
 # 2. Request deposit (100 USDC = 100000 with 6 decimals)
 cast send $VAULT_ADDRESS \
   "requestDeposit(uint256)" \
-  100000 \
+  10000000 \
   --private-key $PRIVATE_KEY \
   --rpc-url $HYPERLIQUID_RPC_URL
 
@@ -261,7 +261,7 @@ cast call $VAULT_ADDRESS \
 # First, request redemption with your share amount
 cast send $VAULT_ADDRESS \
   "requestRedeem(uint256)" \
-  1 \
+  10000000 \
   --private-key $PRIVATE_KEY \
   --rpc-url $HYPERLIQUID_RPC_URL
 
