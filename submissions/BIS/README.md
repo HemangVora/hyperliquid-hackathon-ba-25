@@ -10,6 +10,8 @@ BIS (Best Investment Strategy) Yield Optimizer is a fully automated yield aggreg
 
 ---
 
+DEMO videos -> Frontend_BIS,vid demo.mp4
+
 ## 📖 Table of Contents
 
 - [What We Built](#what-we-built)
