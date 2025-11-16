@@ -17,6 +17,10 @@ remappings = [
     "@openzeppelin/=lib/openzeppelin-contracts/"
 ]
 
+# Exclude files that require newer Solidity versions or aren't needed
+ignored_error_codes = [5574]  # Ignore "contract code size" warnings
+fs_permissions = [{ access = "read", path = "./"}]
+
 [rpc_endpoints]
 hyperliquid_mainnet = "https://rpc.hyperliquid.xyz/evm"
 hyperliquid = "${HYPERLIQUID_RPC_URL}"

@@ -30,7 +30,8 @@ forge script DeployYieldOptimizer \
     --rpc-url $RPC_URL \
     --broadcast \
     --slow \
-    --legacy
+    --legacy \
+    --skip '*/certora/*' --skip '*/test/*' --skip '*/mocks/*' --skip '*/draft-*' --skip '*/signers/*' --skip '*/RLP.sol'
 
 echo ""
 echo "Contract deployed successfully!"
@@ -64,7 +65,8 @@ forge script ConfigureVaults \
     --rpc-url $RPC_URL \
     --broadcast \
     --slow \
-    --legacy
+    --legacy \
+    --skip '*/certora/*' --skip '*/test/*' --skip '*/mocks/*' --skip '*/draft-*' --skip '*/signers/*' --skip '*/RLP.sol'
 
 echo ""
 echo "Vaults whitelisted successfully!"

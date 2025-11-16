@@ -214,14 +214,14 @@ cast send $USDC_ADDRESS \
   "approve(address,uint256)" \
   $VAULT_ADDRESS \
   1000000000 \
-  --private-key $USER_PRIVATE_KEY \
+  --private-key $PRIVATE_KEY \
   --rpc-url $HYPERLIQUID_RPC_URL
 
 # 2. Deposit USDC (1000 USDC with 6 decimals)
 cast send $VAULT_ADDRESS \
-  "deposit(uint256)" \
-  1000000000 \
-  --private-key $USER_PRIVATE_KEY \
+  "requestDeposit(uint256)" \
+  100000 \
+  --private-key $PRIVATE_KEY \
   --rpc-url $HYPERLIQUID_RPC_URL
 
 # 3. Check vault shares received
