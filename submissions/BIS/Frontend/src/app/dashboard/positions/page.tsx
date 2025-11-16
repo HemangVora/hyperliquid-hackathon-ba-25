@@ -1,19 +1,35 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PoolsTable from '@/components/portfolio/PoolsTable';
 import { mockPortfolioData } from '@/data/mockPortfolio';
 import { TrendingUp, TrendingDown, Filter, Search } from 'lucide-react';
 import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { PoolData } from '@/lib/api/pools';
 
 export default function PositionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'paused'>('all');
 
-  const filteredPools = mockPortfolioData.pools.filter(pool => {
-    const matchesSearch = pool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         pool.tokenPair.toLowerCase().includes(searchTerm.toLowerCase());
+  // Convert Pool[] to PoolData[] for PoolsTable
+  const poolsAsPoolData = useMemo(() => {
+    return mockPortfolioData.pools.map((pool): PoolData => ({
+      pool_address: pool.id,
+      chain: 'ethereum', // Default chain
+      name: pool.name,
+      token_pair: pool.tokenPair,
+      tvl: pool.deposited, // Use deposited as TVL
+      apy: pool.apy,
+      risk_level: pool.riskLevel,
+      status: pool.status,
+      protocol: 'HyperGlueX'
+    }));
+  }, []);
+
+  const filteredPools = poolsAsPoolData.filter(pool => {
+    const matchesSearch = (pool.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                         (pool.token_pair?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || pool.status === filterStatus;
     return matchesSearch && matchesStatus;
   });

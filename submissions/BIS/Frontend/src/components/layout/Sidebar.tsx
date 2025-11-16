@@ -9,7 +9,8 @@ import {
   History,
   TrendingUp,
   Settings,
-  User
+  User,
+  Activity
 } from 'lucide-react';
 import ClientOnly from './ClientOnly';
 
@@ -40,6 +41,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       items: [
         { label: 'Positions', href: '/dashboard/positions', icon: TrendingUp },
         { label: 'Strategies', href: '/dashboard/strategies', icon: Target },
+        { label: 'Rebalancing', href: '/rebalancing', icon: Activity },
         { label: 'History', href: '/dashboard/history', icon: History }
       ]
     },
@@ -119,7 +121,7 @@ function SidebarItem({
       href={href}
       className={`flex items-center gap-3 px-3 py-2.5 lg:py-2 rounded-lg text-sm transition-all duration-200 min-h-[44px] ${
         active
-          ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/50'
+          ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50'
           : 'text-gray-300 hover:bg-gray-800 hover:text-white'
       }`}
     >

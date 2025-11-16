@@ -18,7 +18,7 @@ export default function StrategiesPage() {
       title: 'APY Strategy',
       description: 'Maximum yield focused. Automatically selects pools with the highest APY to maximize your returns.',
       icon: TrendingUp,
-      color: 'from-green-400 to-emerald-500',
+      color: 'bg-emerald-500',
       currentAPY: '28.5%',
       recommended: false,
       features: [
@@ -34,7 +34,7 @@ export default function StrategiesPage() {
       title: 'Standard Strategy',
       description: 'Balanced optimization. Considers multiple factors including liquidity and historical performance for sustainable returns.',
       icon: Target,
-      color: 'from-blue-400 to-purple-500',
+      color: 'bg-emerald-500',
       currentAPY: '24.2%',
       recommended: true,
       features: [
@@ -147,7 +147,7 @@ export default function StrategiesPage() {
                       <th className="text-center py-4 px-4 text-gray-400 font-medium">
                         <div className="flex items-center justify-center gap-2">
                           Standard Strategy
-                          <span className="text-xs bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full">
+                          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
                             Recommended
                           </span>
                         </div>
@@ -189,7 +189,7 @@ export default function StrategiesPage() {
                 {/* APY Strategy Explanation */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center flex-shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center flex-shrink-0">
                       <Zap className="w-6 h-6 text-white" />
                     </div>
                     <h3 className="text-xl font-bold text-white">APY Strategy</h3>
@@ -218,7 +218,7 @@ export default function StrategiesPage() {
                 {/* Standard Strategy Explanation */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center flex-shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center flex-shrink-0">
                       <Shield className="w-6 h-6 text-white" />
                     </div>
                     <h3 className="text-xl font-bold text-white">Standard Strategy</h3>
@@ -255,10 +255,10 @@ export default function StrategiesPage() {
             animate={{ opacity: 1, scale: 1 }}
             className="fixed bottom-4 sm:bottom-8 left-4 right-4 sm:left-auto sm:right-8 sm:max-w-md z-50"
           >
-            <Card className="border-2 border-primary-500 shadow-2xl shadow-primary-500/50 bg-gray-800">
+            <Card className="border-2 border-emerald-500 shadow-2xl shadow-emerald-500/50 bg-gray-800">
               <CardContent className="p-4 sm:p-6">
                 <div className="flex items-start gap-3 sm:gap-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
                     <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -269,7 +269,7 @@ export default function StrategiesPage() {
                       Your portfolio will be optimized using the selected strategy.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                      <button className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-lg transition-colors min-h-[44px] sm:min-h-0">
+                      <button className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold rounded-lg transition-colors min-h-[44px] sm:min-h-0">
                         Apply Strategy
                       </button>
                       <button

@@ -20,7 +20,7 @@ export default function Button({
   const baseStyles = 'font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
   const variantStyles = {
-    primary: 'bg-primary-600 hover:bg-primary-700 text-white',
+    primary: 'bg-emerald-500 hover:bg-emerald-400 text-white',
     secondary: 'bg-gray-700 hover:bg-gray-600 text-white',
     outline: 'border-2 border-gray-600 hover:border-gray-500 text-white bg-transparent',
   };

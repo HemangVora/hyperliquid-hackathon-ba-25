@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Menu } from 'lucide-react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import ClientOnly from './ClientOnly';
 
 interface HeaderProps {
@@ -26,7 +27,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
             <ClientOnly fallback={
               <div className="flex items-center space-x-2 sm:space-x-4">
                 <h1 className="text-xl sm:text-2xl font-bold text-white">
-                  HyperGlueX
+                  BIS
                 </h1>
                 <span className="text-sm text-gray-400 hidden md:inline">
                   HyperLiquid Dashboard
@@ -35,7 +36,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
             }>
               <Link href="/dashboard" className="flex items-center space-x-2 sm:space-x-4">
                 <h1 className="text-xl sm:text-2xl font-bold text-white">
-                  HyperGlueX
+                  BIS
                 </h1>
                 <span className="text-sm text-gray-400 hidden md:inline">
                   HyperLiquid Dashboard
@@ -45,9 +46,11 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
           </div>
 
           <div className="flex items-center space-x-2 sm:space-x-4">
-            <button className="px-3 sm:px-4 py-2.5 md:py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm sm:text-base rounded-lg transition-colors min-h-[44px]">
-              Connect Wallet
-            </button>
+            <ConnectButton
+              chainStatus="icon"
+              accountStatus="address"
+              showBalance={false}
+            />
           </div>
         </div>
       </div>
