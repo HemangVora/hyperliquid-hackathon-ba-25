@@ -224,7 +224,7 @@ export function useVaultStats() {
 export function useUserVaultPosition(enabled: boolean = true) {
   const { address } = useAccount();
 
-  const { data, isLoading, error } = useReadContracts({
+  const { data, isLoading, error, refetch } = useReadContracts({
     contracts: [
       {
         address: CONTRACTS.YIELD_OPTIMIZER,
@@ -275,5 +275,5 @@ export function useUserVaultPosition(enabled: boolean = true) {
       }
     : null;
 
-  return { data: position, isLoading, error };
+  return { data: position, isLoading, error, refetch };
 }

@@ -8,7 +8,7 @@ import { CONTRACTS, YieldOptimizerABI } from '@/contracts';
 import type { TransactionEvent } from '@/contracts/types';
 import { useEffect, useState } from 'react';
 import { createPublicClient, http, parseAbiItem } from 'viem';
-import { hyperliquid } from '@/lib/chains';
+import { hyperLiquid } from '@/lib/chains';
 
 /**
  * Fetch transaction history from contract events
@@ -33,7 +33,7 @@ export function useTransactionHistory() {
 
       try {
         const publicClient = createPublicClient({
-          chain: hyperliquid,
+          chain: hyperLiquid,
           transport: http(),
         });
 
