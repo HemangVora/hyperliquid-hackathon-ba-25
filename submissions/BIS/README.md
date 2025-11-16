@@ -58,6 +58,9 @@ The BIS Yield Optimizer solves the **APY volatility problem** in DeFi lending ma
 
 ---
 
+contract https://hyperevmscan.io/address/0x806ff0f92771f84ace0e19ad9878eadfed4cc19d
+rebalance tx https://hyperevmscan.io/tx/0x2ab71f222ffa66c75382e0edf6f8bca070f60672e7c0c19f0445aa9ffb3331b6
+
 ## 🔗 Key Transactions
 
 ### Main Deployment
