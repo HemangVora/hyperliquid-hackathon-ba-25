@@ -67,7 +67,9 @@ export function usePoolData(
     } finally {
       setLoading(false);
     }
-  }, [params]);
+    // Use JSON.stringify for stable dependency comparison of params object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(params)]);
 
   // Initial fetch
   useEffect(() => {

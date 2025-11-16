@@ -69,7 +69,7 @@ export default function PoolsTable({ pools }: PoolsTableProps) {
           {pools.map((pool) => {
             const chainInfo = getChainInfo(pool.chain);
             return (
-              <tr key={pool.pool_address} className="hover:bg-gray-800/50 transition-colors">
+              <tr key={`${pool.pool_address}-${pool.chain}`} className="hover:bg-gray-800/50 transition-colors">
                 <td className="px-2 sm:px-4 py-3 sm:py-4">
                   <div>
                     <div className="font-medium text-white text-sm sm:text-base">

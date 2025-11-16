@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "@rainbow-me/rainbowkit/styles.css";
+import { Web3Provider } from "@/providers/Web3Provider";
 
 export const metadata: Metadata = {
   title: "BIS - HyperLiquid Dashboard",
@@ -14,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        {children}
+        <Web3Provider>
+          {children}
+        </Web3Provider>
       </body>
     </html>
   );

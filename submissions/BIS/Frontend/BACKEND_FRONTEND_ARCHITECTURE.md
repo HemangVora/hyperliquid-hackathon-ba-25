@@ -1006,3 +1006,5 @@ GET    /pool_info/:id
 - ✅ Implement authentication flow (wallet signature → JWT token)
 - ✅ Set up WebSocket for real-time portfolio updates
 
+
+

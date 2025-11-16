@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PortfolioSummary from '@/components/portfolio/PortfolioSummary';
 import PoolCard from '@/components/portfolio/PoolCard';
@@ -8,9 +8,32 @@ import PoolsTable from '@/components/portfolio/PoolsTable';
 import EarningsChart from '@/components/portfolio/EarningsChart';
 import { mockPortfolioData } from '@/data/mockPortfolio';
 import { LayoutGrid, Table } from 'lucide-react';
+import { PoolData } from '@/lib/api/pools';
 
 export default function PortfolioPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+
+  // Convert Pool[] to PoolData[] for PoolsTable
+  const poolsAsPoolData = useMemo(() => {
+    return mockPortfolioData.pools.map((pool): PoolData => ({
+      pool_address: pool.id,
+      chain: 'ethereum', // Default chain
+      name: pool.name,
+      token_pair: pool.tokenPair,
+      tvl: pool.deposited, // Use deposited as TVL
+      apy: pool.apy,
+      risk_level: pool.riskLevel,
+      status: pool.status,
+      protocol: 'HyperGlueX'
+    }));
+  }, []);
+
+  // Calculate average APY
+  const averageAPY = useMemo(() => {
+    if (mockPortfolioData.pools.length === 0) return 0;
+    const sum = mockPortfolioData.pools.reduce((acc, pool) => acc + pool.apy, 0);
+    return sum / mockPortfolioData.pools.length;
+  }, []);
 
   return (
     <DashboardLayout>
@@ -24,9 +47,8 @@ export default function PortfolioPage() {
 
         <PortfolioSummary
           totalValue={mockPortfolioData.totalValue}
-          totalEarningsToday={mockPortfolioData.totalEarningsToday}
-          totalEarningsAllTime={mockPortfolioData.totalEarningsAllTime}
-          percentageChange={mockPortfolioData.percentageChange}
+          averageAPY={averageAPY}
+          poolCount={mockPortfolioData.pools.length}
         />
 
         <EarningsChart data={mockPortfolioData.dailyEarnings} />
@@ -73,7 +95,7 @@ export default function PortfolioPage() {
             </div>
           ) : (
             <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-              <PoolsTable pools={mockPortfolioData.pools} />
+              <PoolsTable pools={poolsAsPoolData} />
             </div>
           )}
         </div>
