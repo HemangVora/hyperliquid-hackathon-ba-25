@@ -1,0 +1,40 @@
+2025-11-16 13:52:11,486 - __main__ - INFO - YieldOptimizer initialized for vault 0x806ff0f92771f84ace0e19ad9878eadfed4cc19d
+2025-11-16 13:52:11,486 - __main__ - INFO - Operator account: 0x0D17bD639f6FcEB293C064716FEF12B5fcaA91B9
+2025-11-16 13:52:11,486 - __main__ - INFO - 🚀 Starting yield optimizer service...
+2025-11-16 13:52:11,486 - __main__ - INFO - Check interval: 300s
+2025-11-16 13:52:11,486 - __main__ - INFO - Min rebalance interval: 86400s
+2025-11-16 13:52:11,486 - __main__ - INFO - ============================================================
+2025-11-16 13:52:11,486 - __main__ - INFO - Starting optimization cycle
+2025-11-16 13:52:11,486 - __main__ - INFO - ============================================================
+2025-11-16 13:52:12,164 - __main__ - INFO - Found 5 whitelisted vaults
+2025-11-16 13:52:12,809 - __main__ - INFO - Total assets under management: 10.00 USDC
+2025-11-16 13:52:12,809 - __main__ - INFO - Fetching metrics for 5 vaults...
+2025-11-16 13:52:14,098 - __main__ - INFO - Fetched GlueX yields for vault 0xE2551499... - APY 13.36%, TVL N/A
+2025-11-16 13:52:14,617 - __main__ - INFO - Fetched GlueX yields for vault 0xCdc3975d... - APY 7.01%, TVL N/A
+2025-11-16 13:52:15,149 - __main__ - INFO - Fetched GlueX yields for vault 0x8F929160... - APY 7.26%, TVL N/A
+2025-11-16 13:52:16,564 - __main__ - INFO - Fetched GlueX yields for vault 0x9f75Eac5... - APY 1.99%, TVL N/A
+2025-11-16 13:52:17,074 - __main__ - INFO - Fetched GlueX yields for vault 0x63Cf7EE5... - APY 27.94%, TVL N/A
+2025-11-16 13:52:17,075 - __main__ - INFO - Vault 0xE2551499... - APY: 13.36%, TVL: $0, Composite: 0.390, Sharpe: 0.94
+2025-11-16 13:52:17,076 - __main__ - INFO - Vault 0xCdc3975d... - APY: 7.01%, TVL: $0, Composite: 0.340, Sharpe: 0.30
+2025-11-16 13:52:17,076 - __main__ - INFO - Vault 0x8F929160... - APY: 7.26%, TVL: $0, Composite: 0.342, Sharpe: 0.33
+2025-11-16 13:52:17,077 - __main__ - INFO - Vault 0x9f75Eac5... - APY: 1.99%, TVL: $0, Composite: 0.299, Sharpe: -0.20
+2025-11-16 13:52:17,077 - __main__ - INFO - Vault 0x63Cf7EE5... - APY: 27.94%, TVL: $0, Composite: 0.507, Sharpe: 2.39
+2025-11-16 13:52:17,077 - __main__ - INFO - Calculating optimal allocation using 'concentrated' strategy...
+2025-11-16 13:52:17,077 - __main__ - INFO - 💎 Concentrated allocation: 100% (10.00 USDC) to 0x63Cf7EE5... (Score: 0.507, APY: 27.94%)
+2025-11-16 13:52:17,682 - __main__ - INFO - Score improvement: 41.9% (gas cost negligible on HyperEVM)
+2025-11-16 13:52:17,682 - __main__ - INFO - Rebalance decision: YES - Rebalancing approved: 41.9% score improvement (gas cost: $0.01)
+2025-11-16 13:52:18,582 - __main__ - INFO - Executing rebalance transaction...
+2025-11-16 13:52:18,582 - __main__ - INFO - Vault addresses: ['0x63Cf7EE583d9954FeBF649aD1c40C97a6493b1Be']
+2025-11-16 13:52:18,587 - __main__ - INFO - Amounts: [10000000]
+2025-11-16 13:52:18,588 - __main__ - INFO - 🔍 Running pre-transaction diagnostics...
+2025-11-16 13:52:19,223 - __main__ - INFO -    Base asset address: 0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb
+2025-11-16 13:52:20,897 - __main__ - INFO -    Contract balance: 10.000000 tokens
+2025-11-16 13:52:20,897 - __main__ - INFO -    Total requested: 10.000000 tokens
+2025-11-16 13:52:20,897 - __main__ - INFO - 
+   Checking vault 1/1: 0x63Cf7EE583d9954FeBF649aD1c40C97a6493b1Be
+2025-11-16 13:52:21,884 - __main__ - INFO -       Required asset: 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34
+2025-11-16 13:52:21,884 - __main__ - WARNING - ⚠️  TOKEN MISMATCH: Vault requires 0x5d3a1Ff2... but we have 0xB8CE59FC...
+2025-11-16 13:52:22,607 - __main__ - INFO -       Max deposit: 42998998246358664.000000 tokens
+2025-11-16 13:52:22,607 - __main__ - INFO -       Requested: 10.000000 tokens
+2025-11-16 13:52:23,521 - __main__ - ERROR - ❌ Transaction would revert: ('execution reverted: revert: Deposit failed', '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000e4465706f736974206661696c6564000000000000000000000000000000000000')
+2025-11-16 13:52:23,521 - __main__ - INFO - Sleeping for 300s...

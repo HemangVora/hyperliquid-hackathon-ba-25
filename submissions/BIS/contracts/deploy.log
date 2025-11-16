@@ -1,0 +1,4 @@
+Warning: Found unknown `ignored_file_paths` config for profile `default` defined in foundry.toml.
+No files changed, compilation skipped
+Error: Failed to deploy script:
+execution reverted: EvmError: OutOfGas (gas: 3000000)

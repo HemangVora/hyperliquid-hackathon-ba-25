@@ -310,12 +310,16 @@ class YieldOptimizer:
     """Main yield optimization service"""
     
     # GlueX Vault addresses from task requirements
+    # NOTE: Filtered to only USDC-accepting vaults to avoid token mismatch issues
+    # The deployed YieldOptimizer accepts USDC (0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb)
+    # Only Vault 2 accepts USDC; others require different tokens:
+    # - Vault 1 (0xE255...CAdD): requires 0xb883...630f
+    # - Vault 2 (0xCdc3...92EA): requires USDC ✓
+    # - Vault 3 (0x8F92...216a): requires 0x5555...5555  
+    # - Vault 4 (0x9f75...7f7): requires 0x1111...1111
+    # - Vault 5 (0x63Cf...1Be): requires 0x5d3a...f34
     GLUEX_VAULTS = [
-        "0xe25514992597786e07872e6c5517fe1906c0cadd",
-        "0xcdc3975df9d1cf054f44ed238edfb708880292ea",
-        "0x8f9291606862eef771a97e5b71e4b98fd1fa216a",
-        "0x9f75eac57d1c6f7248bd2aede58c95689f3827f7",
-        "0x63cf7ee583d9954febf649ad1c40c97a6493b1be"
+        "0xcdc3975df9d1cf054f44ed238edfb708880292ea",  # USDC vault - the only compatible one
     ]
     
     def __init__(
@@ -378,6 +382,13 @@ class YieldOptimizer:
                 "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
                 "stateMutability": "view",
                 "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "asset",
+                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
             }
         ]
         
@@ -405,12 +416,47 @@ class YieldOptimizer:
         """
         logger.info(f"Fetching metrics for {len(vaults)} vaults...")
 
+        # Get our contract's base asset (USDC)
+        try:
+            base_asset = self.vault.functions.asset().call()
+            logger.info(f"Base asset: {base_asset}")
+        except Exception as e:
+            logger.warning(f"Could not determine base asset: {e}")
+            base_asset = None
+
         # Get historical APY data from GlueX
         apy_data = self.gluex.get_historical_apy(vaults)
 
         metrics = []
+        vault_abi = [{
+            "constant": True,
+            "inputs": [],
+            "name": "asset",
+            "outputs": [{"name": "", "type": "address"}],
+            "type": "function"
+        }]
+        
         for vault in vaults:
             vault = Web3.to_checksum_address(vault)
+
+            # Filter out vaults that don't accept our base asset (USDC)
+            if base_asset:
+                try:
+                    vault_contract = self.w3.eth.contract(
+                        address=vault,
+                        abi=vault_abi
+                    )
+                    vault_asset = vault_contract.functions.asset().call()
+                    
+                    if vault_asset.lower() != base_asset.lower():
+                        logger.warning(
+                            f"⚠️  Skipping {vault[:10]}... - requires {vault_asset[:10]}... "
+                            f"but we have {base_asset[:10]}... (token mismatch)"
+                        )
+                        continue
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not check vault {vault[:10]}... asset: {e}, skipping")
+                    continue
 
             # Get data from GlueX API response
             vault_data = apy_data.get(vault.lower(), {})
@@ -981,8 +1027,117 @@ class YieldOptimizer:
         amounts = [a.amount for a in allocations]
         
         logger.info("Executing rebalance transaction...")
+        logger.info(f"Vault addresses: {vault_addresses}")
+        logger.info(f"Amounts: {amounts}")
+        
+        # Add diagnostic checks
+        logger.info("🔍 Running pre-transaction diagnostics...")
+        try:
+            # Check contract's USDC balance
+            asset_address = self.vault.functions.asset().call()
+            logger.info(f"   Base asset address: {asset_address}")
+            
+            asset_contract = self.w3.eth.contract(
+                address=Web3.to_checksum_address(asset_address),
+                abi=[{
+                    "constant": True,
+                    "inputs": [{"name": "account", "type": "address"}],
+                    "name": "balanceOf",
+                    "outputs": [{"name": "", "type": "uint256"}],
+                    "type": "function"
+                }, {
+                    "constant": True,
+                    "inputs": [],
+                    "name": "decimals",
+                    "outputs": [{"name": "", "type": "uint8"}],
+                    "type": "function"
+                }, {
+                    "constant": True,
+                    "inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}],
+                    "name": "allowance",
+                    "outputs": [{"name": "", "type": "uint256"}],
+                    "type": "function"
+                }]
+            )
+            
+            try:
+                decimals = asset_contract.functions.decimals().call()
+                contract_balance = asset_contract.functions.balanceOf(self.vault_address).call()
+                total_requested = sum(amounts)
+                logger.info(f"   Contract balance: {contract_balance / 10**decimals:.6f} tokens")
+                logger.info(f"   Total requested: {total_requested / 10**decimals:.6f} tokens")
+                
+                if contract_balance < total_requested:
+                    logger.error(
+                        f"❌ INSUFFICIENT BALANCE: Contract has {contract_balance / 10**decimals:.6f} "
+                        f"but needs {total_requested / 10**decimals:.6f} tokens"
+                    )
+            except Exception as e:
+                logger.warning(f"   Could not check balance: {e}")
+            
+            # Check each vault's deposit limits and token requirements
+            vault_abi = [{
+                "constant": True,
+                "inputs": [{"name": "receiver", "type": "address"}],
+                "name": "maxDeposit",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "type": "function"
+            }, {
+                "constant": True,
+                "inputs": [],
+                "name": "asset",
+                "outputs": [{"name": "", "type": "address"}],
+                "type": "function"
+            }]
+            
+            for i, vault_addr in enumerate(vault_addresses):
+                logger.info(f"\n   Checking vault {i + 1}/{len(vault_addresses)}: {vault_addr}")
+                vault_contract = self.w3.eth.contract(
+                    address=Web3.to_checksum_address(vault_addr),
+                    abi=vault_abi
+                )
+                try:
+                    vault_asset = vault_contract.functions.asset().call()
+                    logger.info(f"      Required asset: {vault_asset}")
+                    
+                    # Check if vault requires same token as our base asset
+                    if vault_asset.lower() != asset_address.lower():
+                        logger.warning(
+                            f"⚠️  TOKEN MISMATCH: Vault requires {vault_asset[:10]}... "
+                            f"but we have {asset_address[:10]}..."
+                        )
+                    
+                    max_deposit = vault_contract.functions.maxDeposit(self.vault_address).call()
+                    logger.info(f"      Max deposit: {max_deposit / 10**decimals:.6f} tokens")
+                    logger.info(f"      Requested: {amounts[i] / 10**decimals:.6f} tokens")
+                    
+                    if max_deposit == 0:
+                        logger.error(f"❌ VAULT PAUSED/FULL: maxDeposit = 0 for {vault_addr[:10]}...")
+                    elif amounts[i] > max_deposit:
+                        logger.error(
+                            f"❌ AMOUNT EXCEEDS LIMIT: Requesting {amounts[i] / 10**decimals:.6f} "
+                            f"but max is {max_deposit / 10**decimals:.6f}"
+                        )
+                except Exception as e:
+                    logger.warning(f"      Could not check vault limits: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"⚠️  Diagnostic checks failed: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
         
         try:
+            # First, try to simulate the call to catch errors early
+            try:
+                self.vault.functions.rebalance(
+                    vault_addresses,
+                    amounts
+                ).call({'from': self.account.address})
+                logger.info("✓ Transaction simulation successful")
+            except Exception as sim_error:
+                logger.error(f"❌ Transaction would revert: {sim_error}")
+                return ""
+            
             # Build transaction
             tx = self.vault.functions.rebalance(
                 vault_addresses,
@@ -1008,10 +1163,12 @@ class YieldOptimizer:
             if receipt['status'] == 1:
                 logger.info(f"✅ Rebalance successful! Gas used: {receipt['gasUsed']}")
                 self.last_rebalance = time.time()
+                return tx_hash.hex()
             else:
-                logger.error("❌ Rebalance transaction failed")
-            
-            return tx_hash.hex()
+                logger.error(f"❌ Rebalance transaction failed - tx reverted on-chain")
+                logger.error(f"Transaction hash: {tx_hash.hex()}")
+                logger.error(f"Receipt: {receipt}")
+                return ""  # Return empty string on failure
             
         except Exception as e:
             logger.error(f"Failed to execute rebalance: {e}")
